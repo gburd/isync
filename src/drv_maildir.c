@@ -1250,7 +1250,7 @@ maildir_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 }
 
 struct driver maildir_driver = {
-	0,
+	0, /* XXX DRV_CRLF? */
 	maildir_parse_store,
 	maildir_cleanup_drv,
 	maildir_open_store,

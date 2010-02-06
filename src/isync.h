@@ -174,6 +174,11 @@ typedef struct {
 
 /* All memory belongs to the driver's user. */
 
+/*
+   This flag says that the driver CAN store messages with CRLFs,
+   not that it must. The lack of it OTOH implies that it CANNOT,
+   and as CRLF is the canonical format, we convert.
+*/
 #define DRV_CRLF        1
 
 #define TUIDL 12

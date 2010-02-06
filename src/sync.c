@@ -211,7 +211,7 @@ msg_fetched( int sts, void *aux )
 	copy_vars_t *vars = (copy_vars_t *)aux;
 	SVARS(vars->aux)
 	char *fmap, *buf;
-	int i, len, extra, cra, crd, scr, tcr, crds;
+	int i, len, extra, scr, tcr, lcrs, crs, lines;
 	int start, sbreak = 0, ebreak = 0;
 	char c;
 
@@ -224,29 +224,24 @@ msg_fetched( int sts, void *aux )
 		if (vars->srec || scr != tcr) {
 			fmap = vars->data.data;
 			len = vars->data.len;
-			cra = crd = 0;
-			if (scr > tcr)
-				crd = -1;
-			else if (scr < tcr)
-				cra = 1;
-			extra = 0, i = 0;
+			extra = lines = crs = i = 0;
 			if (vars->srec) {
-				extra += 8 + TUIDL + 1 + tcr;
 			  nloop:
 				start = i;
-				crds = 0;
+				lcrs = 0;
 				while (i < len) {
 					c = fmap[i++];
 					if (c == '\r')
-						crds += crd;
+						lcrs++;
 					else if (c == '\n') {
 						if (!memcmp( fmap + start, "X-TUID: ", 8 )) {
-							extra -= (ebreak = i) - (sbreak = start);
+							extra = (sbreak = start) - (ebreak = i);
 							goto oke;
 						}
-						extra += cra + crds;
-						if (i - 1 - scr == start) {
-							sbreak = ebreak = i - 1 - scr;
+						lines++;
+						crs += lcrs;
+						if (i - lcrs - 1 == start) {
+							sbreak = ebreak = start;
 							goto oke;
 						}
 						goto nloop;
@@ -257,54 +252,66 @@ msg_fetched( int sts, void *aux )
 				      vars->msg->uid, str_ms[1-t] );
 				free( fmap );
 				return vars->cb( SYNC_NOGOOD, 0, vars );
+			  oke:
+				extra += 8 + TUIDL + 1 + (tcr && crs);
 			}
-		  oke:
-			if (cra || crd)
+			if (tcr != scr) {
 				for (; i < len; i++) {
 					c = fmap[i];
 					if (c == '\r')
-						extra += crd;
+						crs++;
 					else if (c == '\n')
-						extra += cra;
+						lines++;
 				}
+				extra -= crs;
+				if (tcr)
+					extra += lines;
+			}
 
 			vars->data.len = len + extra;
 			buf = vars->data.data = nfmalloc( vars->data.len );
 			i = 0;
 			if (vars->srec) {
-				if (cra) {
-					for (; i < sbreak; i++) {
-						if (fmap[i] == '\n')
-							*buf++ = '\r';
-						*buf++ = fmap[i];
+				if (tcr != scr) {
+					if (tcr) {
+						for (; i < sbreak; i++)
+							if ((c = fmap[i]) != '\r') {
+								if (c == '\n')
+									*buf++ = '\r';
+								*buf++ = c;
+							}
+					} else {
+						for (; i < sbreak; i++)
+							if ((c = fmap[i]) != '\r')
+								*buf++ = c;
 					}
-				} else if (crd) {
-					for (; i < sbreak; i++)
-						if (fmap[i] != '\r')
-							*buf++ = fmap[i];
 				} else {
 					memcpy( buf, fmap, sbreak );
 					buf += sbreak;
 				}
+
 				memcpy( buf, "X-TUID: ", 8 );
 				buf += 8;
 				memcpy( buf, vars->srec->tuid, TUIDL );
 				buf += TUIDL;
-				if (tcr)
+				if (tcr && crs)
 					*buf++ = '\r';
 				*buf++ = '\n';
 				i = ebreak;
 			}
-			if (cra) {
-				for (; i < len; i++) {
-					if (fmap[i] == '\n')
-						*buf++ = '\r';
-					*buf++ = fmap[i];
+			if (tcr != scr) {
+				if (tcr) {
+					for (; i < len; i++)
+						if ((c = fmap[i]) != '\r') {
+							if (c == '\n')
+								*buf++ = '\r';
+							*buf++ = c;
+						}
+				} else {
+					for (; i < len; i++)
+						if ((c = fmap[i]) != '\r')
+							*buf++ = c;
 				}
-			} else if (crd) {
-				for (; i < len; i++)
-					if (fmap[i] != '\r')
-						*buf++ = fmap[i];
 			} else
 				memcpy( buf, fmap + i, len - i );
 
