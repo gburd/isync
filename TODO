@@ -1,9 +1,45 @@
+have a look at libpathfinder.
+
+find out why mutt's message size calc is confused.
+
+iNboX is case insensitive!
+
+add some marker about message being already [remotely] trashed.
+real transactions would be certainly not particularly useful ...
+
+!srec->msg[t] || (srec->msg[t]->status & M_DEAD)
+
+use UID EXPUNGE! (rfc4315 (obsoletes rfc2359))
+
+quotas are weird, they make close() fail.
+
+clarify error cases of transactions.
+
+cleanup/improve error messages in the drivers.
+
+clarify UID 0 vs. < 0 returns vor store_msg & find_msg.
+
+create dbg_srec(srec, fmt, ...).
+
+
 make SSL certificate validation more automatic.
 
-add deamon mode. primary goal: keep imap password in memory.
+allow excluding particular boxes from a wildcard spec.
+
+add daemon mode. primary goal: keep imap password in memory.
+also: idling mode.
 
 add asynchronous operation to remote mailbox drivers. this is actually
 what prevents us from simply using c-client and thus becoming mailsync.
+
+parallel fetching of multiple mailboxes.
+
+set_flags:
+- imap: grouping commands for efficiency
+- callback should get the flags actually affected. but then, why could flag
+  changes fail at all?
+
+add streaming from fetching to storing.
 
 handle custom flags (keywords).
 
@@ -15,9 +51,12 @@ use MULTIAPPEND and FETCH with multiple messages.
 
 create dummies describing MIME structure of messages bigger than MaxSize.
 flagging the dummy would fetch the real message. possibly remove --renew.
+note that all interaction needs to happen on the slave side probably.
 
 don't SELECT boxes unless really needed; in particular not for appending,
 and in write-only mode not before changes are made.
+problem: UIDVALIDITY change detection is delayed, significantly complicating
+matters.
 
 possibly request message attributes on a per-message basis from the drivers.
 considerations:
