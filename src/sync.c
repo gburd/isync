@@ -253,6 +253,8 @@ msg_fetched( int sts, void *aux )
 					}
 				}
 				/* invalid message */
+				warn( "Warning: message %d from %s has incomplete header.\n",
+				      vars->msg->uid, str_ms[1-t] );
 				free( fmap );
 				return vars->cb( SYNC_NOGOOD, 0, vars );
 			}
@@ -333,6 +335,10 @@ msg_stored( int sts, int uid, void *aux )
 		return vars->cb( SYNC_OK, uid, vars );
 	case DRV_CANCELED:
 		return vars->cb( SYNC_CANCELED, 0, vars );
+	case DRV_MSG_BAD:
+		warn( "Warning: %s refuses to store message %d from %s.\n",
+		      str_ms[t], vars->msg->uid, str_ms[1-t] );
+		return vars->cb( SYNC_NOGOOD, 0, vars );
 	case DRV_STORE_BAD:
 		return vars->cb( SYNC_BAD(t), 0, vars );
 	default:
