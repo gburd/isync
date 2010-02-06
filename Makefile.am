@@ -12,8 +12,9 @@ deb:
 	CFLAGS="-O2 -mcpu=i686" fakeroot debian/rules binary
 
 deb-clean:
-	dh_clean -Xsrc/
-	fakeroot debian/rules unpatch
+	cd $(srcdir) && \
+	 dh_clean -Xsrc/ && \
+	 fakeroot debian/rules unpatch
 
 distdir distclean: deb-clean
 
