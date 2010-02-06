@@ -270,7 +270,7 @@ main( int argc, char **argv )
 			Debug = 1;
 			break;
 		case 'V':
-			Verbose = 1;
+			Verbose++;
 			break;
 		case 'q':
 			Quiet++;
@@ -390,7 +390,7 @@ main( int argc, char **argv )
 		return 0;
 	args = 0;
 	add_arg( &args, "mbsync" );
-	if (Verbose)
+	while (--Verbose >= 0)
 		add_arg( &args, "-V" );
 	if (Debug)
 		add_arg( &args, "-D" );

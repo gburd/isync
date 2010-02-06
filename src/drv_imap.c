@@ -696,6 +696,11 @@ parse_imap_list_l( imap_store_t *ctx, char **sp, list_t **curp, int level )
 				s += n;
 				bytes -= n;
 			}
+			if (DFlags & XVERBOSE) {
+				puts( "=========" );
+				fwrite( cur->val, cur->len, 1, stdout );
+				puts( "=========" );
+			}
 
 			if (buffer_gets( &ctx->buf, &s ))
 				goto bail;

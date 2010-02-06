@@ -227,9 +227,10 @@ extern const char *Home;
 
 #define DEBUG        1
 #define VERBOSE      2
-#define QUIET        4
-#define VERYQUIET    8
-#define KEEPJOURNAL  16
+#define XVERBOSE     4
+#define QUIET        8
+#define VERYQUIET    16
+#define KEEPJOURNAL  32
 
 extern int DFlags, Ontty;
 

@@ -265,9 +265,12 @@ main( int argc, char **argv )
 						DFlags |= VERYQUIET;
 					else
 						DFlags |= QUIET;
-				} else if (!strcmp( opt, "verbose" ))
-					DFlags |= VERBOSE | QUIET;
-				else if (!strcmp( opt, "debug" ))
+				} else if (!strcmp( opt, "verbose" )) {
+					if (DFlags & VERBOSE)
+						DFlags |= XVERBOSE;
+					else
+						DFlags |= VERBOSE | QUIET;
+				} else if (!strcmp( opt, "debug" ))
 					DFlags |= DEBUG | QUIET;
 				else if (!strcmp( opt, "pull" ))
 					cops |= XOP_PULL, mvars->ops[M] |= XOP_HAVE_TYPE;
@@ -424,7 +427,10 @@ main( int argc, char **argv )
 				DFlags |= QUIET;
 			break;
 		case 'V':
-			DFlags |= VERBOSE | QUIET;
+			if (DFlags & VERBOSE)
+				DFlags |= XVERBOSE;
+			else
+				DFlags |= VERBOSE | QUIET;
 			break;
 		case 'D':
 			DFlags |= DEBUG | QUIET;
