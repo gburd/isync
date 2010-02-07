@@ -60,6 +60,7 @@ struct option Opts[] = {
 	{"debug", 0, NULL, 'D'},
 	{"quiet", 0, NULL, 'q'},
 	{"user", 1, NULL, 'u'},
+	{"pass", 1, NULL, 'P'},
 	{"version", 0, NULL, 'v'},
 	{"verbose", 0, NULL, 'V'},
 	{0, 0, 0, 0}
@@ -100,6 +101,7 @@ PACKAGE " " VERSION " - mbsync wrapper: IMAP4 to maildir synchronizer\n"
 "  -s, --host HOST	IMAP server address\n"
 "  -p, --port PORT	server IMAP port\n"
 "  -u, --user USER	IMAP user name\n"
+"  -P, --pass PASSWORD	IMAP password\n"
 "  -c, --config CONFIG	read an alternate config file (default: ~/.isyncrc)\n"
 "  -D, --debug		print debugging messages\n"
 "  -V, --verbose		verbose mode (display network traffic)\n"
@@ -182,7 +184,7 @@ main( int argc, char **argv )
 	maildir = "~";
 	xmaildir = Home;
 
-#define FLAGS "wW:alCLRc:defhp:qu:r:F:M:1I:s:vVD"
+#define FLAGS "wW:alCLRc:defhp:qu:P:r:F:M:1I:s:vVD"
 
 	mod = all = list = ops = writeout = Quiet = Verbose = Debug = 0;
 #if HAVE_GETOPT_LONG
@@ -264,6 +266,10 @@ main( int argc, char **argv )
 			break;
 		case 'u':
 			global.user = optarg;
+			mod = 1;
+			break;
+		case 'P':
+			global.pass = optarg;
 			mod = 1;
 			break;
 		case 'D':
