@@ -75,5 +75,4 @@ rpm:
 	cp $(PACKAGE)-$(VERSION).tar.gz /usr/src/rpm/SOURCES
 	CFLAGS="-O2 -mcpu=i686" rpm -ba --clean isync.spec
 
-docdir = $(datadir)/doc/isync
 doc_DATA = README TODO NEWS ChangeLog AUTHORS
