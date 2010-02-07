@@ -4,3 +4,4 @@ Makefile.in
 mbsync
 mdconvert
 tmp
+*.o
