@@ -22,17 +22,14 @@ non-permanent internet collection (dIMAP).
 ./configure --prefix=/usr
 
 %install
+rm -rf $RPM_BUILD_ROOT
 make DESTDIR=$RPM_BUILD_ROOT install
+rm -rf $RPM_BUILD_ROOT%{_docdir}/%{name}
 
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %files
 %doc AUTHORS COPYING NEWS README TODO ChangeLog src/mbsyncrc.sample src/compat/isyncrc.sample
-/usr/bin/isync
-/usr/bin/mbsync
-/usr/bin/mdconvert
-/usr/bin/get-cert
-/usr/man/man1/isync.1.gz
-/usr/man/man1/mbsync.1.gz
-/usr/man/man1/mdconvert.1.gz
+%{_bindir}/*
+%{_mandir}/man1/*
