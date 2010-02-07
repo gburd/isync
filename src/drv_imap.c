@@ -22,6 +22,15 @@
  * despite that library's more restrictive license.
  */
 
+/* This must come before isync.h to avoid our #define S messing up
+ * blowfish.h on MacOS X. */
+#include <config.h>
+#if HAVE_LIBSSL
+# include <openssl/ssl.h>
+# include <openssl/err.h>
+# include <openssl/hmac.h>
+#endif
+
 #include "isync.h"
 
 #include <assert.h>
@@ -44,11 +53,6 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#if HAVE_LIBSSL
-# include <openssl/ssl.h>
-# include <openssl/err.h>
-# include <openssl/hmac.h>
-#endif
 
 typedef struct imap_server_conf {
 	struct imap_server_conf *next;
