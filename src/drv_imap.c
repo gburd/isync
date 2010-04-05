@@ -360,14 +360,14 @@ socket_perror( const char *func, Socket_t *sock, int ret )
 		case SSL_ERROR_SSL:
 			if ((err = ERR_get_error()) == 0) {
 				if (ret == 0)
-					error( "SSL_%s:got EOF\n", func );
+					error( "SSL_%s: got EOF\n", func );
 				else
-					error( "SSL_%s:%d:%s\n", func, errno, strerror(errno) );
+					error( "SSL_%s: %s\n", func, strerror(errno) );
 			} else
-				error( "SSL_%s:%d:%s\n", func, err, ERR_error_string( err, 0 ) );
+				error( "SSL_%s: %s\n", func, ERR_error_string( err, 0 ) );
 			return;
 		default:
-			error( "SSL_%s:%d:unhandled SSL error\n", func, err );
+			error( "SSL_%s: unhandled SSL error %d\n", func, err );
 			break;
 		}
 		return;
