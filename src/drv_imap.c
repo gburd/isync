@@ -384,7 +384,10 @@ socket_perror( const char *func, Socket_t *sock, int ret )
 static int
 socket_read( Socket_t *sock, char *buf, int len )
 {
-	int n =
+	int n;
+
+	assert( sock->fd >= 0 );
+	n =
 #if HAVE_LIBSSL
 		sock->use_ssl ? SSL_read( sock->ssl, buf, len ) :
 #endif
@@ -400,7 +403,10 @@ socket_read( Socket_t *sock, char *buf, int len )
 static int
 socket_write( Socket_t *sock, char *buf, int len )
 {
-	int n =
+	int n;
+
+	assert( sock->fd >= 0 );
+	n =
 #if HAVE_LIBSSL
 		sock->use_ssl ? SSL_write( sock->ssl, buf, len ) :
 #endif
