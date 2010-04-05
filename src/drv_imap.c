@@ -696,7 +696,7 @@ parse_imap_list_l( imap_store_t *ctx, char **sp, list_t **curp, int level )
 
 			/* now read the rest of the message */
 			while (bytes > 0) {
-				if ((n = socket_read (&ctx->buf.sock, s, bytes)) <= 0)
+				if ((n = socket_read( &ctx->buf.sock, s, bytes )) <= 0)
 					goto bail;
 				s += n;
 				bytes -= n;
