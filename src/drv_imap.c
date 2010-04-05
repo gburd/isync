@@ -255,6 +255,7 @@ verify_cert( imap_store_t *ctx )
 			       srvc->cert_file, strerror( errno ) );
 			return 0;
 		}
+		err = -1;
 		for (lcert = 0; READ_X509_KEY( fp, &lcert ); )
 			if (!(err = compare_certificates( lcert, cert, md, n )))
 				break;
