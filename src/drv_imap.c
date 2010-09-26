@@ -1394,10 +1394,8 @@ imap_open_store( store_conf_t *conf,
 #endif
 
 	/* read the greeting string */
-	if (buffer_gets( &ctx->buf, &rsp )) {
-		error( "IMAP error: no greeting response\n" );
+	if (buffer_gets( &ctx->buf, &rsp ))
 		goto bail;
-	}
 	arg = next_arg( &rsp );
 	if (!arg || *arg != '*' || (arg = next_arg( &rsp )) == NULL) {
 		error( "IMAP error: invalid greeting response\n" );
