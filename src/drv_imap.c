@@ -910,7 +910,7 @@ parse_response_code( imap_store_t *ctx, struct imap_cmd *cmd, char *s )
 			return RESP_BAD;
 		}
 	} else if (!strcmp( "UIDNEXT", arg )) {
-		if (!(arg = next_arg( &s )) || !(ctx->uidnext = atoi( arg ))) {
+		if (!(arg = next_arg( &s )) || (ctx->uidnext = strtol( arg, &p, 10 ), *p)) {
 			error( "IMAP error: malformed NEXTUID status\n" );
 			return RESP_BAD;
 		}
@@ -1553,6 +1553,8 @@ imap_select( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 		prefix = ctx->prefix;
 	}
 
+	ctx->uidnext = -1;
+
 	cmd->param.create = (gctx->opts & OPEN_CREATE) != 0;
 	cmd->param.trycreate = 1;
 	if ((ret = imap_exec_b( ctx, cmd, "SELECT \"%s%s\"", prefix, gctx->name )) != DRV_OK)
@@ -1577,7 +1579,7 @@ imap_select( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 				goto bail;
 		}
 		if (maxuid == INT_MAX)
-			maxuid = ctx->uidnext ? ctx->uidnext - 1 : 1000000000;
+			maxuid = ctx->uidnext >= 0 ? ctx->uidnext - 1 : 1000000000;
 		if (maxuid >= minuid &&
 		    (ret = imap_exec_b( ctx, 0, "UID FETCH %d:%d (UID%s%s)", minuid, maxuid,
 		                        (gctx->opts & OPEN_FLAGS) ? " FLAGS" : "",
