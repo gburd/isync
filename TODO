@@ -17,6 +17,9 @@ clarify error cases of transactions.
 
 cleanup/improve error messages in the drivers.
 
+sync.c does not consider UID 0 valid, which is wrong. fixing this requires
+an incompatible change or a remapping hack in sync state files.
+
 clarify UID 0 vs. < 0 returns vor store_msg & find_msg.
 
 create dbg_srec(srec, fmt, ...).
