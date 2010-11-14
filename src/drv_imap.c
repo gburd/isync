@@ -520,8 +520,7 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 			printf( ">>> %d LOGIN <user> <pass>\n", cmd->tag );
 	}
 	if (socket_write( &ctx->buf.sock, buf, bufl ) != bufl) {
-		if (cmd->param.data)
-			free( cmd->param.data );
+		free( cmd->param.data );
 		free( cmd->cmd );
 		free( cmd );
 		return NULL;
@@ -1115,8 +1114,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 		  normal:
 			if (cmdp->param.done)
 				cmdp->param.done( ctx, cmdp, resp );
-			if (cmdp->param.data)
-				free( cmdp->param.data );
+			free( cmdp->param.data );
 			free( cmdp->cmd );
 			free( cmdp );
 			if (!tcmd || tcmd == cmdp)
@@ -1590,8 +1588,7 @@ imap_select( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 	ret = DRV_OK;
 
   bail:
-	if (excs)
-		free( excs );
+	free( excs );
 	return cb( ret, aux );
 }
 

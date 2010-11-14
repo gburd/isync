@@ -133,10 +133,8 @@ maildir_cleanup( store_t *gctx )
 	if (ctx->db)
 		ctx->db->close( ctx->db, 0 );
 #endif /* USE_DB */
-	if (gctx->path)
-		free( gctx->path );
-	if (ctx->excs)
-		free( ctx->excs );
+	free( gctx->path );
+	free( ctx->excs );
 	if (ctx->uvfd >= 0)
 		close( ctx->uvfd );
 }
@@ -214,8 +212,7 @@ maildir_free_scan( msglist_t *msglist )
 
 	if (msglist->ents) {
 		for (i = 0; i < msglist->nents; i++)
-			if (msglist->ents[i].base)
-				free( msglist->ents[i].base );
+			free( msglist->ents[i].base );
 		free( msglist->ents );
 	}
 }

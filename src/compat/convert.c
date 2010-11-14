@@ -164,8 +164,7 @@ convert( config_t *box )
 		if (!(d = opendir( buf ))) {
 			perror( "opendir" );
 		  err4:
-			if (msgs)
-				free( msgs );
+			free( msgs );
 			if (db)
 				db->close( db, 0 );
 			goto err2;
@@ -252,8 +251,7 @@ convert( config_t *box )
 	close( fd );
 	unlink( ilname );
 
-	if (msgs)
-		free( msgs );
+	free( msgs );
 	free( mboxdir );
 	return;
 }
