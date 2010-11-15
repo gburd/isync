@@ -120,7 +120,7 @@ typedef struct imap_store {
 	unsigned got_namespace:1;
 	list_t *ns_personal, *ns_other, *ns_shared; /* NAMESPACE info */
 	message_t **msgapp; /* FETCH results */
-	unsigned caps, rcaps; /* CAPABILITY results */
+	unsigned caps; /* CAPABILITY results */
 	/* command queue */
 	int nexttag, num_in_progress, literal_pending;
 	struct imap_cmd *in_progress, **in_progress_append;
@@ -143,6 +143,7 @@ struct imap_cmd {
 		int data_len;
 		int uid; /* to identify fetch responses */
 		unsigned
+			to_trash:1, /* we are storing to trash, not current. */
 			create:1, /* create the mailbox if we get an error ... */
 			trycreate:1; /* ... but only if this is true or the server says so. */
 	} param;
@@ -498,7 +499,8 @@ static struct imap_cmd *
 v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
                    const char *fmt, va_list ap )
 {
-	int n, bufl;
+	int bufl, litplus;
+	const char *buffmt;
 	char buf[1024];
 
 	while (ctx->literal_pending)
@@ -508,8 +510,17 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 		cmd = new_imap_cmd();
 	cmd->tag = ++ctx->nexttag;
 	nfvasprintf( &cmd->cmd, fmt, ap );
-	bufl = nfsnprintf( buf, sizeof(buf), cmd->param.data ? CAP(LITERALPLUS) ?
-	                   "%d %s{%d+}\r\n" : "%d %s{%d}\r\n" : "%d %s\r\n",
+	if (!cmd->param.data) {
+		buffmt = "%d %s\r\n";
+		litplus = 0;
+	} else if ((cmd->param.to_trash && ctx->trashnc) || !CAP(LITERALPLUS)) {
+		buffmt = "%d %s{%d}\r\n";
+		litplus = 0;
+	} else {
+		buffmt = "%d %s{%d+}\r\n";
+		litplus = 1;
+	}
+	bufl = nfsnprintf( buf, sizeof(buf), buffmt,
 	                   cmd->tag, cmd->cmd, cmd->param.data_len );
 	if (DFlags & VERBOSE) {
 		if (ctx->num_in_progress)
@@ -519,33 +530,28 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 		else
 			printf( ">>> %d LOGIN <user> <pass>\n", cmd->tag );
 	}
-	if (socket_write( &ctx->buf.sock, buf, bufl ) != bufl) {
+	if (socket_write( &ctx->buf.sock, buf, bufl ) != bufl)
+		goto bail;
+	if (litplus) {
+		if (socket_write( &ctx->buf.sock, cmd->param.data, cmd->param.data_len ) != cmd->param.data_len ||
+		    socket_write( &ctx->buf.sock, "\r\n", 2 ) != 2)
+			goto bail;
 		free( cmd->param.data );
-		free( cmd->cmd );
-		free( cmd );
-		return NULL;
-	}
-	if (cmd->param.data) {
-		if (CAP(LITERALPLUS)) {
-			n = socket_write( &ctx->buf.sock, cmd->param.data, cmd->param.data_len );
-			free( cmd->param.data );
-			if (n != cmd->param.data_len ||
-			    (n = socket_write( &ctx->buf.sock, "\r\n", 2 )) != 2)
-			{
-				free( cmd->cmd );
-				free( cmd );
-				return NULL;
-			}
-			cmd->param.data = 0;
-		} else
-			ctx->literal_pending = 1;
-	} else if (cmd->param.cont)
+		cmd->param.data = 0;
+	} else if (cmd->param.cont || cmd->param.data) {
 		ctx->literal_pending = 1;
+	}
 	cmd->next = 0;
 	*ctx->in_progress_append = cmd;
 	ctx->in_progress_append = &cmd->next;
 	ctx->num_in_progress++;
 	return cmd;
+
+  bail:
+	free( cmd->param.data );
+	free( cmd->cmd );
+	free( cmd );
+	return NULL;
 }
 
 static struct imap_cmd *
@@ -884,7 +890,6 @@ parse_capability( imap_store_t *ctx, char *cmd )
 		for (i = 0; i < as(cap_list); i++)
 			if (!strcmp( cap_list[i], arg ))
 				ctx->caps |= 1 << i;
-	ctx->rcaps = ctx->caps;
 }
 
 static int
@@ -1042,6 +1047,8 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 			   it enforces a round-trip. */
 			cmdp = ctx->in_progress;
 			if (cmdp->param.data) {
+				if (cmdp->param.to_trash)
+					ctx->trashnc = 0; /* Can't get NO [TRYCREATE] any more. */
 				n = socket_write( &ctx->buf.sock, cmdp->param.data, cmdp->param.data_len );
 				free( cmdp->param.data );
 				cmdp->param.data = 0;
@@ -1074,9 +1081,11 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 			if (cmdp->param.cont || cmdp->param.data)
 				ctx->literal_pending = 0;
 			arg = next_arg( &cmd );
-			if (!strcmp( "OK", arg ))
+			if (!strcmp( "OK", arg )) {
+				if (cmdp->param.to_trash)
+					ctx->trashnc = 0; /* Can't get NO [TRYCREATE] any more. */
 				resp = DRV_OK;
-			else {
+			} else {
 				if (!strcmp( "NO", arg )) {
 					if (cmdp->param.create && cmd && (cmdp->param.trycreate || !memcmp( cmd, "[TRYCREATE]", 11 ))) { /* SELECT, APPEND or UID COPY */
 						p = strchr( cmdp->cmd, '"' );
@@ -1661,6 +1670,7 @@ imap_trash_msg( store_t *gctx, message_t *msg,
 	imap_store_t *ctx = (imap_store_t *)gctx;
 	struct imap_cmd *cmd = new_imap_cmd();
 	cmd->param.create = 1;
+	cmd->param.to_trash = 1;
 	return cb( imap_exec_m( ctx, cmd, "UID COPY %d \"%s%s\"",
 	                        msg->uid, ctx->prefix, gctx->conf->trash ), aux );
 }
@@ -1691,18 +1701,14 @@ imap_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 		box = gctx->conf->trash;
 		prefix = ctx->prefix;
 		cmd->param.create = 1;
-		if (ctx->trashnc)
-			ctx->caps = ctx->rcaps & ~(1 << LITERALPLUS);
+		cmd->param.to_trash = 1;
 	} else {
 		box = gctx->name;
 		prefix = !strcmp( box, "INBOX" ) ? "" : ctx->prefix;
 	}
 	ret = imap_exec_m( ctx, cmd, "APPEND \"%s%s\" %s", prefix, box, flagstr );
-	ctx->caps = ctx->rcaps;
 	if (ret != DRV_OK)
 		return cb( ret, -1, aux );
-	if (to_trash)
-		ctx->trashnc = 0;
 
 	return cb( DRV_OK, uid, aux );
 }
