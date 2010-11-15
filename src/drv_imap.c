@@ -115,8 +115,8 @@ struct imap_cmd;
 typedef struct imap_store {
 	store_t gen;
 	const char *prefix;
-	unsigned /*currentnc:1,*/ trashnc:1;
 	int uidnext; /* from SELECT responses */
+	unsigned trashnc:1; /* trash folder's existence is not confirmed yet */
 	unsigned got_namespace:1;
 	list_t *ns_personal, *ns_other, *ns_shared; /* NAMESPACE info */
 	message_t **msgapp; /* FETCH results */
@@ -1540,10 +1540,8 @@ imap_select( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 
 
 	if (!strcmp( gctx->name, "INBOX" )) {
-//		ctx->currentnc = 0;
 		prefix = "";
 	} else {
-//		ctx->currentnc = 1;	/* could use LIST results for that */
 		prefix = ctx->prefix;
 	}
 
@@ -1698,9 +1696,6 @@ imap_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 	} else {
 		box = gctx->name;
 		prefix = !strcmp( box, "INBOX" ) ? "" : ctx->prefix;
-		cmd->param.create = (gctx->opts & OPEN_CREATE) != 0;
-		/*if (ctx->currentnc)
-			ctx->caps = ctx->rcaps & ~(1 << LITERALPLUS);*/
 	}
 	ret = imap_exec_m( ctx, cmd, "APPEND \"%s%s\" %s", prefix, box, flagstr );
 	ctx->caps = ctx->rcaps;
@@ -1708,9 +1703,6 @@ imap_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 		return cb( ret, -1, aux );
 	if (to_trash)
 		ctx->trashnc = 0;
-	else {
-		/*ctx->currentnc = 0;*/
-	}
 
 	return cb( DRV_OK, uid, aux );
 }
