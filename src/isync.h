@@ -169,8 +169,7 @@ typedef struct {
 #define DRV_MSG_BAD     1
 #define DRV_BOX_BAD     2
 #define DRV_STORE_BAD   3
-#define DRV_SERVER_BAD  4
-#define DRV_CANCELED    5
+#define DRV_CANCELED    4
 
 /* All memory belongs to the driver's user. */
 
