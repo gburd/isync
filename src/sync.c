@@ -967,7 +967,7 @@ msgs_found_sel( sync_vars_t *svars, int t )
 	int sflags, nflags, aflags, dflags, nex;
 	char fbuf[16]; /* enlarge when support for keywords is added */
 
-	if (!(svars->state[t] & ST_SENT_FIND_OLD) || svars->find_old_done[t] < svars->find_new_total[t])
+	if (!(svars->state[t] & ST_SENT_FIND_OLD) || svars->find_old_done[t] < svars->find_old_total[t])
 		return 0;
 
 	/*
@@ -1067,7 +1067,7 @@ msgs_found_sel( sync_vars_t *svars, int t )
 		return select_box( svars, M, minwuid, mexcs, nmexcs );
 	}
 
-	if (!(svars->state[1-t] & ST_SENT_FIND_OLD) || svars->find_old_done[1-t] < svars->find_new_total[1-t])
+	if (!(svars->state[1-t] & ST_SENT_FIND_OLD) || svars->find_old_done[1-t] < svars->find_old_total[1-t])
 		return 0;
 
 	if (svars->uidval[M] < 0 || svars->uidval[S] < 0) {
