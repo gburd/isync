@@ -509,7 +509,8 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 	if (!cmd)
 		cmd = new_imap_cmd();
 	cmd->tag = ++ctx->nexttag;
-	nfvasprintf( &cmd->cmd, fmt, ap );
+	if (fmt)
+		nfvasprintf( &cmd->cmd, fmt, ap );
 	if (!cmd->param.data) {
 		buffmt = "%d %s\r\n";
 		litplus = 0;
@@ -996,7 +997,7 @@ parse_list_rsp( imap_store_t *ctx, char *cmd )
 static int
 get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 {
-	struct imap_cmd *cmdp, **pcmdp, *ncmdp;
+	struct imap_cmd *cmdp, **pcmdp;
 	char *cmd, *arg, *arg1, *p;
 	int n, resp, resp2, tag;
 
@@ -1095,19 +1096,13 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 						}
 						/* not waiting here violates the spec, but a server that does not
 						   grok this nonetheless violates it too. */
-						ncmdp = nfmalloc( sizeof(*ncmdp) );
-						memcpy( &ncmdp->param, &cmdp->param, sizeof(cmdp->param) );
-						ncmdp->param.create = 0;
-						if (!submit_imap_cmd( ctx, ncmdp, "%s", cmdp->cmd )) {
+						cmdp->param.create = 0;
+						if (!submit_imap_cmd( ctx, cmdp, 0 )) {
 							resp = RESP_BAD;
-							goto normal;
+							goto abnormal;
 						}
-						free( cmdp->cmd );
-						free( cmdp );
 						if (!tcmd)
 							return 0;	/* ignored */
-						if (cmdp == tcmd)
-							tcmd = ncmdp;
 						continue;
 					}
 					resp = RESP_NO;
@@ -1125,6 +1120,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 			free( cmdp->param.data );
 			free( cmdp->cmd );
 			free( cmdp );
+		  abnormal:
 			if (!tcmd || tcmd == cmdp)
 				return resp;
 		}
