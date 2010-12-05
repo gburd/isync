@@ -1018,8 +1018,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				ctx->ns_shared = parse_list( &cmd );
 			} else if (!strcmp( "OK", arg ) || !strcmp( "BAD", arg ) ||
 			           !strcmp( "NO", arg ) || !strcmp( "BYE", arg )) {
-				if ((resp = parse_response_code( ctx, 0, cmd )) != RESP_OK)
-					return resp;
+				parse_response_code( ctx, 0, cmd );
 			} else if (!strcmp( "CAPABILITY", arg ))
 				parse_capability( ctx, cmd );
 			else if (!strcmp( "LIST", arg ))
