@@ -98,7 +98,6 @@ typedef struct {
 	int fd;
 #ifdef HAVE_LIBSSL
 	SSL *ssl;
-	unsigned int use_ssl:1;
 #endif
 } Socket_t;
 
@@ -355,7 +354,7 @@ socket_perror( const char *func, Socket_t *sock, int ret )
 #ifdef HAVE_LIBSSL
 	int err;
 
-	if (sock->use_ssl) {
+	if (sock->ssl) {
 		switch ((err = SSL_get_error( sock->ssl, ret ))) {
 		case SSL_ERROR_SYSCALL:
 		case SSL_ERROR_SSL:
@@ -390,7 +389,7 @@ socket_read( Socket_t *sock, char *buf, int len )
 	assert( sock->fd >= 0 );
 	n =
 #ifdef HAVE_LIBSSL
-		sock->use_ssl ? SSL_read( sock->ssl, buf, len ) :
+		sock->ssl ? SSL_read( sock->ssl, buf, len ) :
 #endif
 		read( sock->fd, buf, len );
 	if (n <= 0) {
@@ -409,7 +408,7 @@ socket_write( Socket_t *sock, char *buf, int len )
 	assert( sock->fd >= 0 );
 	n =
 #ifdef HAVE_LIBSSL
-		sock->use_ssl ? SSL_write( sock->ssl, buf, len ) :
+		sock->ssl ? SSL_write( sock->ssl, buf, len ) :
 #endif
 		write( sock->fd, buf, len );
 	if (n != len) {
@@ -430,7 +429,7 @@ socket_pending( Socket_t *sock )
 	if (num > 0)
 		return num;
 #ifdef HAVE_LIBSSL
-	if (sock->use_ssl)
+	if (sock->ssl)
 		return SSL_pending( sock->ssl );
 #endif
 	return 0;
@@ -1212,7 +1211,6 @@ start_tls( imap_store_t *ctx )
 	if (verify_cert( ctx ))
 		return 1;
 
-	ctx->buf.sock.use_ssl = 1;
 	info( "Connection is now encrypted\n" );
 	return 0;
 }
@@ -1300,9 +1298,6 @@ imap_open_store( store_conf_t *conf,
 	struct hostent *he;
 	struct sockaddr_in addr;
 	int s, a[2], preauth;
-#ifdef HAVE_LIBSSL
-	int use_ssl;
-#endif
 
 	for (ctxp = &unowned; (ctx = (imap_store_t *)*ctxp); ctxp = &ctx->gen.next)
 		if (((imap_store_conf_t *)ctx->gen.conf)->server == srvc) {
@@ -1322,10 +1317,6 @@ imap_open_store( store_conf_t *conf,
 	ctx->in_progress_append = &ctx->in_progress;
 
 	/* open connection to IMAP server */
-#ifdef HAVE_LIBSSL
-	use_ssl = 0;
-#endif
-
 	if (srvc->tunnel) {
 		infon( "Starting tunnel '%s'... ", srvc->tunnel );
 
@@ -1388,7 +1379,6 @@ imap_open_store( store_conf_t *conf,
 	if (srvc->use_imaps) {
 		if (start_tls( ctx ))
 			goto ssl_bail;
-		use_ssl = 1;
 	}
 #endif
 
@@ -1420,7 +1410,6 @@ imap_open_store( store_conf_t *conf,
 					goto bail;
 				if (start_tls( ctx ))
 					goto ssl_bail;
-				use_ssl = 1;
 
 				if (imap_exec( ctx, 0, "CAPABILITY" ) != RESP_OK)
 					goto bail;
@@ -1476,7 +1465,7 @@ imap_open_store( store_conf_t *conf,
 				goto bail;
 			}
 #ifdef HAVE_LIBSSL
-			if (!use_ssl)
+			if (!ctx->buf.sock.ssl)
 #endif
 				warn( "*** IMAP Warning *** Password is being sent in the clear\n" );
 			if (imap_exec( ctx, 0, "LOGIN \"%s\" \"%s\"", srvc->user, srvc->pass ) != RESP_OK) {
