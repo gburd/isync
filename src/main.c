@@ -678,8 +678,9 @@ store_opened( store_t *ctx, void *aux )
 	MVARS(aux)
 
 	if (!ctx) {
-		mvars->state[t] = ST_CLOSED;
 		mvars->ret = mvars->skip = 1;
+		mvars->state[t] = ST_CLOSED;
+		sync_chans( mvars, E_OPEN );
 		return;
 	}
 	mvars->ctx[t] = ctx;
