@@ -1223,32 +1223,28 @@ hexchar( unsigned int b )
 	return 'a' + (b - 10);
 }
 
-/* XXX merge into do_cram_auth? */
-static char *
-cram( const char *challenge, const char *user, const char *pass )
+static void
+cram( const char *challenge, const char *user, const char *pass, char **_final, int *_finallen )
 {
+	unsigned char *response, *final;
+	unsigned hashlen;
+	int i, clen, rlen, blen, flen, olen;
+	unsigned char hash[16];
+	char buf[256], hex[33];
 	HMAC_CTX hmac;
-	char hash[16];
-	char hex[33];
-	int i;
-	unsigned int hashlen = sizeof(hash);
-	char buf[256];
-	int len = strlen( challenge );
-	char *response = nfcalloc( 1 + len );
-	char *final;
 
-	/* response will always be smaller than challenge because we are
-	 * decoding.
-	 */
-	len = EVP_DecodeBlock( (unsigned char *)response, (unsigned char *)challenge, strlen( challenge ) );
+	HMAC_Init( &hmac, (unsigned char *)pass, strlen( pass ), EVP_md5() );
 
-	HMAC_Init( &hmac, (unsigned char *) pass, strlen( pass ), EVP_md5() );
-	HMAC_Update( &hmac, (unsigned char *)response, strlen( response ) );
-	HMAC_Final( &hmac, (unsigned char *)hash, &hashlen );
-
-	assert( hashlen == sizeof(hash) );
-
+	clen = strlen( challenge );
+	/* response will always be smaller than challenge because we are decoding. */
+	response = nfcalloc( 1 + clen );
+	rlen = EVP_DecodeBlock( response, (unsigned char *)challenge, clen );
+	HMAC_Update( &hmac, response, rlen );
 	free( response );
+
+	hashlen = sizeof(hash);
+	HMAC_Final( &hmac, hash, &hashlen );
+	assert( hashlen == sizeof(hash) );
 
 	hex[32] = 0;
 	for (i = 0; i < 16; i++) {
@@ -1256,16 +1252,16 @@ cram( const char *challenge, const char *user, const char *pass )
 		hex[2 * i + 1] = hexchar( hash[i] & 0xf );
 	}
 
-	nfsnprintf( buf, sizeof(buf), "%s %s", user, hex );
+	blen = nfsnprintf( buf, sizeof(buf), "%s %s", user, hex );
 
-	len = strlen( buf );
-	len = ENCODED_SIZE( len ) + 1;
-	final = nfmalloc( len );
-	final[len - 1] = 0;
+	flen = ENCODED_SIZE( blen );
+	final = nfmalloc( flen + 1 );
+	final[flen] = 0;
+	olen = EVP_EncodeBlock( (unsigned char *)final, (unsigned char *)buf, blen );
+	assert( olen == flen );
 
-	assert( EVP_EncodeBlock( (unsigned char *)final, (unsigned char *)buf, strlen( buf ) ) == len - 1 );
-
-	return final;
+	*_final = (char *)final;
+	*_finallen = flen;
 }
 
 static int
@@ -1275,11 +1271,10 @@ do_cram_auth( imap_store_t *ctx, struct imap_cmd *cmdp, const char *prompt )
 	char *resp;
 	int n, l;
 
-	resp = cram( prompt, srvc->user, srvc->pass );
+	cram( prompt, srvc->user, srvc->pass, &resp, &l );
 
 	if (DFlags & VERBOSE)
 		printf( ">+> %s\n", resp );
-	l = strlen( resp );
 	n = socket_write( &ctx->buf.sock, resp, l );
 	free( resp );
 	if (n != l)
