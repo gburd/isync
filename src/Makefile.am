@@ -5,7 +5,7 @@ SUBDIRS = $(compat_dir)
 
 bin_PROGRAMS = mbsync mdconvert
 
-mbsync_SOURCES = main.c sync.c config.c util.c drv_imap.c drv_maildir.c
+mbsync_SOURCES = main.c sync.c config.c util.c socket.c drv_imap.c drv_maildir.c
 mbsync_LDADD = -ldb $(SSL_LIBS) $(SOCK_LIBS)
 noinst_HEADERS = isync.h
 

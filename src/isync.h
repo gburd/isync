@@ -52,6 +52,41 @@
 
 #define EXE "mbsync"
 
+typedef struct ssl_st SSL;
+typedef struct ssl_ctx_st SSL_CTX;
+typedef struct x509_store_st X509_STORE;
+
+typedef struct server_conf {
+	char *tunnel;
+	char *host;
+	int port;
+#ifdef HAVE_LIBSSL
+	char *cert_file;
+	unsigned use_imaps:1;
+	unsigned use_sslv2:1;
+	unsigned use_sslv3:1;
+	unsigned use_tlsv1:1;
+
+	/* these are actually variables and are leaked at the end */
+	SSL_CTX *SSLContext;
+	X509_STORE *cert_store;
+#endif
+} server_conf_t;
+
+typedef struct {
+	int fd;
+#ifdef HAVE_LIBSSL
+	SSL *ssl;
+#endif
+} Socket_t;
+
+typedef struct {
+	Socket_t sock;
+	int bytes;
+	int offset;
+	char buf[1024];
+} buffer_t;
+
 typedef struct {
 	const char *file;
 	FILE *fp;
@@ -293,6 +328,21 @@ struct driver {
 extern int Pid;
 extern char Hostname[256];
 extern const char *Home;
+
+
+/* socket.c */
+
+int socket_connect( const server_conf_t *conf, Socket_t *sock );
+int socket_start_tls( const server_conf_t *conf, Socket_t *sock );
+void socket_close( Socket_t *sock );
+int socket_read( Socket_t *sock, char *buf, int len );
+int socket_write( Socket_t *sock, char *buf, int len );
+int socket_pending( Socket_t *sock );
+
+int buffer_gets( buffer_t *b, char **s );
+
+void cram( const char *challenge, const char *user, const char *pass,
+           char **_final, int *_finallen );
 
 
 /* util.c */

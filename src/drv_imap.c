@@ -22,21 +22,10 @@
  * despite that library's more restrictive license.
  */
 
-/* This must come before isync.h to avoid our #define S messing up
- * blowfish.h on MacOS X. */
-#include <config.h>
-#ifdef HAVE_LIBSSL
-# include <openssl/ssl.h>
-# include <openssl/err.h>
-# include <openssl/hmac.h>
-#endif
-
 #include "isync.h"
 
 #include <assert.h>
 #include <unistd.h>
-#include <sys/mman.h>
-#include <sys/time.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stddef.h>
@@ -44,33 +33,16 @@
 #include <errno.h>
 #include <string.h>
 #include <ctype.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-#ifdef HAVE_SYS_FILIO_H
-# include <sys/filio.h>
-#endif
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <arpa/inet.h>
-#include <netdb.h>
 
 typedef struct imap_server_conf {
 	struct imap_server_conf *next;
 	char *name;
-	char *tunnel;
-	char *host;
-	int port;
+	server_conf_t sconf;
 	char *user;
 	char *pass;
 #ifdef HAVE_LIBSSL
-	char *cert_file;
-	unsigned use_imaps:1;
 	unsigned require_ssl:1;
-	unsigned use_sslv2:1;
-	unsigned use_sslv3:1;
-	unsigned use_tlsv1:1;
 	unsigned require_cram:1;
-	X509_STORE *cert_store;
 #endif
 } imap_server_conf_t;
 
@@ -94,20 +66,6 @@ typedef struct _list {
 	int len;
 } list_t;
 
-typedef struct {
-	int fd;
-#ifdef HAVE_LIBSSL
-	SSL *ssl;
-#endif
-} Socket_t;
-
-typedef struct {
-	Socket_t sock;
-	int bytes;
-	int offset;
-	char buf[1024];
-} buffer_t;
-
 struct imap_cmd;
 #define max_in_progress 50 /* make this configurable? */
 
@@ -124,9 +82,6 @@ typedef struct imap_store {
 	/* command queue */
 	int nexttag, num_in_progress, literal_pending;
 	struct imap_cmd *in_progress, **in_progress_append;
-#ifdef HAVE_LIBSSL
-	SSL_CTX *SSLContext;
-#endif
 
 	/* Used during sequential operations like connect */
 	enum { GreetingPending = 0, GreetingBad, GreetingOk, GreetingPreauth } greeting;
@@ -230,305 +185,6 @@ static const char *Flags[] = {
 	"Seen",
 	"Deleted",
 };
-
-#ifdef HAVE_LIBSSL
-/* Some of this code is inspired by / lifted from mutt. */
-
-static int
-compare_certificates( X509 *cert, X509 *peercert,
-                      unsigned char *peermd, unsigned peermdlen )
-{
-	unsigned char md[EVP_MAX_MD_SIZE];
-	unsigned mdlen;
-
-	/* Avoid CPU-intensive digest calculation if the certificates are
-	 * not even remotely equal. */
-	if (X509_subject_name_cmp( cert, peercert ) ||
-	    X509_issuer_name_cmp( cert, peercert ))
-		return -1;
-
-	if (!X509_digest( cert, EVP_sha1(), md, &mdlen ) ||
-	    peermdlen != mdlen || memcmp( peermd, md, mdlen ))
-		return -1;
-
-	return 0;
-}
-
-#if OPENSSL_VERSION_NUMBER >= 0x00904000L
-#define READ_X509_KEY(fp, key) PEM_read_X509( fp, key, 0, 0 )
-#else
-#define READ_X509_KEY(fp, key) PEM_read_X509( fp, key, 0 )
-#endif
-
-/* this gets called when a certificate is to be verified */
-static int
-verify_cert( imap_store_t *ctx )
-{
-	imap_server_conf_t *srvc = ((imap_store_conf_t *)ctx->gen.conf)->server;
-	SSL *ssl = ctx->buf.sock.ssl;
-	X509 *cert, *lcert;
-	BIO *bio;
-	FILE *fp;
-	int err;
-	unsigned n, i;
-	X509_STORE_CTX xsc;
-	char buf[256];
-	unsigned char md[EVP_MAX_MD_SIZE];
-
-	cert = SSL_get_peer_certificate( ssl );
-	if (!cert) {
-		error( "Error, no server certificate\n" );
-		return -1;
-	}
-
-	while (srvc->cert_file) { // So break works
-		if (X509_cmp_current_time( X509_get_notBefore( cert )) >= 0) {
-			error( "Server certificate is not yet valid" );
-			break;
-		}
-		if (X509_cmp_current_time( X509_get_notAfter( cert )) <= 0) {
-			error( "Server certificate has expired" );
-			break;
-		}
-		if (!X509_digest( cert, EVP_sha1(), md, &n )) {
-			error( "*** Unable to calculate digest\n" );
-			break;
-		}
-		if (!(fp = fopen( srvc->cert_file, "rt" ))) {
-			error( "Unable to load CertificateFile '%s': %s\n",
-			       srvc->cert_file, strerror( errno ) );
-			return 0;
-		}
-		err = -1;
-		for (lcert = 0; READ_X509_KEY( fp, &lcert ); )
-			if (!(err = compare_certificates( lcert, cert, md, n )))
-				break;
-		X509_free( lcert );
-		fclose( fp );
-		if (!err)
-			return 0;
-		break;
-	}
-
-	if (!srvc->cert_store) {
-		if (!(srvc->cert_store = X509_STORE_new())) {
-			error( "Error creating certificate store\n" );
-			return -1;
-		}
-		if (!X509_STORE_set_default_paths( srvc->cert_store ))
-			warn( "Error while loading default certificate files: %s\n",
-			      ERR_error_string( ERR_get_error(), 0 ) );
-		if (!srvc->cert_file) {
-			info( "Note: CertificateFile not defined\n" );
-		} else if (!X509_STORE_load_locations( srvc->cert_store, srvc->cert_file, 0 )) {
-			error( "Error while loading certificate file '%s': %s\n",
-			       srvc->cert_file, ERR_error_string( ERR_get_error(), 0 ) );
-			return -1;
-		}
-	}
-
-	X509_STORE_CTX_init( &xsc, srvc->cert_store, cert, 0 );
-	err = X509_verify_cert( &xsc ) > 0 ? 0 : X509_STORE_CTX_get_error( &xsc );
-	X509_STORE_CTX_cleanup( &xsc );
-	if (!err)
-		return 0;
-	error( "Error, can't verify certificate: %s (%d)\n",
-	       X509_verify_cert_error_string( err ), err );
-
-	X509_NAME_oneline( X509_get_subject_name( cert ), buf, sizeof(buf) );
-	info( "\nSubject: %s\n", buf );
-	X509_NAME_oneline( X509_get_issuer_name( cert ), buf, sizeof(buf) );
-	info( "Issuer:  %s\n", buf );
-	bio = BIO_new( BIO_s_mem() );
-	ASN1_TIME_print( bio, X509_get_notBefore( cert ) );
-	memset( buf, 0, sizeof(buf) );
-	BIO_read( bio, buf, sizeof(buf) - 1 );
-	info( "Valid from: %s\n", buf );
-	ASN1_TIME_print( bio, X509_get_notAfter( cert ) );
-	memset( buf, 0, sizeof(buf) );
-	BIO_read( bio, buf, sizeof(buf) - 1 );
-	BIO_free( bio );
-	info( "      to:   %s\n", buf );
-	if (!X509_digest( cert, EVP_md5(), md, &n )) {
-		error( "*** Unable to calculate fingerprint\n" );
-	} else {
-		info( "Fingerprint: " );
-		for (i = 0; i < n; i += 2)
-			info( "%02X%02X ", md[i], md[i + 1] );
-		info( "\n" );
-	}
-
-	fputs( "\nAccept certificate? [y/N]: ",  stderr );
-	if (fgets( buf, sizeof(buf), stdin ) && (buf[0] == 'y' || buf[0] == 'Y'))
-		return 0;
-	return -1;
-}
-
-static int
-init_ssl_ctx( imap_store_t *ctx )
-{
-	imap_server_conf_t *srvc = ((imap_store_conf_t *)ctx->gen.conf)->server;
-	const SSL_METHOD *method;
-	int options = 0;
-
-	if (srvc->use_tlsv1 && !srvc->use_sslv2 && !srvc->use_sslv3)
-		method = TLSv1_client_method();
-	else
-		method = SSLv23_client_method();
-	ctx->SSLContext = SSL_CTX_new( method );
-
-	if (!srvc->use_sslv2)
-		options |= SSL_OP_NO_SSLv2;
-	if (!srvc->use_sslv3)
-		options |= SSL_OP_NO_SSLv3;
-	if (!srvc->use_tlsv1)
-		options |= SSL_OP_NO_TLSv1;
-
-	SSL_CTX_set_options( ctx->SSLContext, options );
-
-	/* we check the result of the verification after SSL_connect() */
-	SSL_CTX_set_verify( ctx->SSLContext, SSL_VERIFY_NONE, 0 );
-	return 0;
-}
-#endif /* HAVE_LIBSSL */
-
-static void
-socket_perror( const char *func, Socket_t *sock, int ret )
-{
-#ifdef HAVE_LIBSSL
-	int err;
-
-	if (sock->ssl) {
-		switch ((err = SSL_get_error( sock->ssl, ret ))) {
-		case SSL_ERROR_SYSCALL:
-		case SSL_ERROR_SSL:
-			if ((err = ERR_get_error()) == 0) {
-				if (ret == 0)
-					error( "SSL_%s: got EOF\n", func );
-				else
-					error( "SSL_%s: %s\n", func, strerror(errno) );
-			} else
-				error( "SSL_%s: %s\n", func, ERR_error_string( err, 0 ) );
-			return;
-		default:
-			error( "SSL_%s: unhandled SSL error %d\n", func, err );
-			break;
-		}
-		return;
-	}
-#else
-	(void)sock;
-#endif
-	if (ret < 0)
-		perror( func );
-	else
-		error( "%s: unexpected EOF\n", func );
-}
-
-static int
-socket_read( Socket_t *sock, char *buf, int len )
-{
-	int n;
-
-	assert( sock->fd >= 0 );
-	n =
-#ifdef HAVE_LIBSSL
-		sock->ssl ? SSL_read( sock->ssl, buf, len ) :
-#endif
-		read( sock->fd, buf, len );
-	if (n <= 0) {
-		socket_perror( "read", sock, n );
-		close( sock->fd );
-		sock->fd = -1;
-	}
-	return n;
-}
-
-static int
-socket_write( Socket_t *sock, char *buf, int len )
-{
-	int n;
-
-	assert( sock->fd >= 0 );
-	n =
-#ifdef HAVE_LIBSSL
-		sock->ssl ? SSL_write( sock->ssl, buf, len ) :
-#endif
-		write( sock->fd, buf, len );
-	if (n != len) {
-		socket_perror( "write", sock, n );
-		close( sock->fd );
-		sock->fd = -1;
-	}
-	return n;
-}
-
-static int
-socket_pending( Socket_t *sock )
-{
-	int num = -1;
-
-	if (ioctl( sock->fd, FIONREAD, &num ) < 0)
-		return -1;
-	if (num > 0)
-		return num;
-#ifdef HAVE_LIBSSL
-	if (sock->ssl)
-		return SSL_pending( sock->ssl );
-#endif
-	return 0;
-}
-
-/* simple line buffering */
-static int
-buffer_gets( buffer_t * b, char **s )
-{
-	int n;
-	int start = b->offset;
-
-	*s = b->buf + start;
-
-	for (;;) {
-		/* make sure we have enough data to read the \r\n sequence */
-		if (b->offset + 1 >= b->bytes) {
-			if (start) {
-				/* shift down used bytes */
-				*s = b->buf;
-
-				assert( start <= b->bytes );
-				n = b->bytes - start;
-
-				if (n)
-					memmove( b->buf, b->buf + start, n );
-				b->offset -= start;
-				b->bytes = n;
-				start = 0;
-			}
-
-			n = socket_read( &b->sock, b->buf + b->bytes,
-			                 sizeof(b->buf) - b->bytes );
-
-			if (n <= 0)
-				return -1;
-
-			b->bytes += n;
-		}
-
-		if (b->buf[b->offset] == '\r') {
-			assert( b->offset + 1 < b->bytes );
-			if (b->buf[b->offset + 1] == '\n') {
-				b->buf[b->offset] = 0;  /* terminate the string */
-				b->offset += 2; /* next line */
-				if (DFlags & VERBOSE)
-					puts( *s );
-				return 0;
-			}
-		}
-
-		b->offset++;
-	}
-	/* not reached */
-}
 
 static struct imap_cmd *
 new_imap_cmd( int size )
@@ -1270,16 +926,9 @@ imap_cancel_store( store_t *gctx )
 {
 	imap_store_t *ctx = (imap_store_t *)gctx;
 
+	socket_close( &ctx->buf.sock );
 	free_generic_messages( ctx->gen.msgs );
 	free_string_list( ctx->gen.boxes );
-	if (ctx->buf.sock.fd >= 0)
-		close( ctx->buf.sock.fd );
-#ifdef HAVE_LIBSSL
-	if (ctx->buf.sock.ssl)
-		SSL_free( ctx->buf.sock.ssl );
-	if (ctx->SSLContext)
-		SSL_CTX_free( ctx->SSLContext );
-#endif
 	free_list( ctx->ns_personal );
 	free_list( ctx->ns_other );
 	free_list( ctx->ns_shared );
@@ -1370,87 +1019,6 @@ imap_cleanup_p2( imap_store_t *ctx,
 
 #ifdef HAVE_LIBSSL
 static int
-start_tls( imap_store_t *ctx )
-{
-	int ret;
-	static int ssl_inited;
-
-	if (!ssl_inited) {
-		SSL_library_init();
-		SSL_load_error_strings();
-		ssl_inited = 1;
-	}
-
-	if (init_ssl_ctx( ctx ))
-		return 1;
-
-	ctx->buf.sock.ssl = SSL_new( ctx->SSLContext );
-	SSL_set_fd( ctx->buf.sock.ssl, ctx->buf.sock.fd );
-	if ((ret = SSL_connect( ctx->buf.sock.ssl )) <= 0) {
-		socket_perror( "connect", &ctx->buf.sock, ret );
-		return 1;
-	}
-
-	/* verify the server certificate */
-	if (verify_cert( ctx ))
-		return 1;
-
-	info( "Connection is now encrypted\n" );
-	return 0;
-}
-
-#define ENCODED_SIZE(n) (4*((n+2)/3))
-
-static char
-hexchar( unsigned int b )
-{
-	if (b < 10)
-		return '0' + b;
-	return 'a' + (b - 10);
-}
-
-static void
-cram( const char *challenge, const char *user, const char *pass, char **_final, int *_finallen )
-{
-	unsigned char *response, *final;
-	unsigned hashlen;
-	int i, clen, rlen, blen, flen, olen;
-	unsigned char hash[16];
-	char buf[256], hex[33];
-	HMAC_CTX hmac;
-
-	HMAC_Init( &hmac, (unsigned char *)pass, strlen( pass ), EVP_md5() );
-
-	clen = strlen( challenge );
-	/* response will always be smaller than challenge because we are decoding. */
-	response = nfcalloc( 1 + clen );
-	rlen = EVP_DecodeBlock( response, (unsigned char *)challenge, clen );
-	HMAC_Update( &hmac, response, rlen );
-	free( response );
-
-	hashlen = sizeof(hash);
-	HMAC_Final( &hmac, hash, &hashlen );
-	assert( hashlen == sizeof(hash) );
-
-	hex[32] = 0;
-	for (i = 0; i < 16; i++) {
-		hex[2 * i] = hexchar( (hash[i] >> 4) & 0xf );
-		hex[2 * i + 1] = hexchar( hash[i] & 0xf );
-	}
-
-	blen = nfsnprintf( buf, sizeof(buf), "%s %s", user, hex );
-
-	flen = ENCODED_SIZE( blen );
-	final = nfmalloc( flen + 1 );
-	final[flen] = 0;
-	olen = EVP_EncodeBlock( (unsigned char *)final, (unsigned char *)buf, blen );
-	assert( olen == flen );
-
-	*_final = (char *)final;
-	*_finallen = flen;
-}
-
-static int
 do_cram_auth( imap_store_t *ctx, struct imap_cmd *cmdp, const char *prompt )
 {
 	imap_server_conf_t *srvc = ((imap_store_conf_t *)ctx->gen.conf)->server;
@@ -1495,9 +1063,6 @@ imap_open_store( store_conf_t *conf,
 	imap_server_conf_t *srvc = cfg->server;
 	imap_store_t *ctx;
 	store_t **ctxp;
-	struct hostent *he;
-	struct sockaddr_in addr;
-	int s, a[2];
 
 	for (ctxp = &unowned; (ctx = (imap_store_t *)*ctxp); ctxp = &ctx->gen.next)
 		if (((imap_store_conf_t *)ctx->gen.conf)->server == srvc) {
@@ -1524,68 +1089,12 @@ imap_open_store( store_conf_t *conf,
 	set_bad_callback( &ctx->gen, (void (*)(void *))imap_open_store_bail, ctx );
 	ctx->in_progress_append = &ctx->in_progress;
 
-	/* open connection to IMAP server */
-	if (srvc->tunnel) {
-		infon( "Starting tunnel '%s'... ", srvc->tunnel );
-
-		if (socketpair( PF_UNIX, SOCK_STREAM, 0, a )) {
-			perror( "socketpair" );
-			exit( 1 );
-		}
-
-		if (fork() == 0) {
-			if (dup2( a[0], 0 ) == -1 || dup2( a[0], 1 ) == -1)
-				_exit( 127 );
-			close( a[0] );
-			close( a[1] );
-			execl( "/bin/sh", "sh", "-c", srvc->tunnel, (char *)0 );
-			_exit( 127 );
-		}
-
-		close (a[0]);
-
-		ctx->buf.sock.fd = a[1];
-
-		info( "ok\n" );
-	} else {
-		memset( &addr, 0, sizeof(addr) );
-		addr.sin_port = srvc->port ? htons( srvc->port ) :
-#ifdef HAVE_LIBSSL
-		                srvc->use_imaps ? htons( 993 ) :
-#endif
-		                htons( 143 );
-		addr.sin_family = AF_INET;
-
-		infon( "Resolving %s... ", srvc->host );
-		he = gethostbyname( srvc->host );
-		if (!he) {
-			error( "IMAP error: Cannot resolve server '%s'\n", srvc->host );
-			goto bail;
-		}
-		info( "ok\n" );
-
-		addr.sin_addr.s_addr = *((int *) he->h_addr_list[0]);
-
-		s = socket( PF_INET, SOCK_STREAM, 0 );
-		if (s < 0) {
-			perror( "socket" );
-			exit( 1 );
-		}
-
-		infon( "Connecting to %s:%hu... ", inet_ntoa( addr.sin_addr ), ntohs( addr.sin_port ) );
-		if (connect( s, (struct sockaddr *)&addr, sizeof(addr) )) {
-			close( s );
-			perror( "connect" );
-			goto bail;
-		}
-		info( "ok\n" );
-
-		ctx->buf.sock.fd = s;
-	}
+	if (!socket_connect( &srvc->sconf, &ctx->buf.sock ))
+		goto bail;
 
 #ifdef HAVE_LIBSSL
-	if (srvc->use_imaps) {
-		if (start_tls( ctx )) {
+	if (srvc->sconf.use_imaps) {
+		if (socket_start_tls( &srvc->sconf, &ctx->buf.sock )) {
 			imap_open_store_ssl_bail( ctx );
 			return;
 		}
@@ -1630,7 +1139,8 @@ imap_open_store_authenticate( imap_store_t *ctx )
 		imap_store_conf_t *cfg = (imap_store_conf_t *)ctx->gen.conf;
 		imap_server_conf_t *srvc = cfg->server;
 
-		if (!srvc->use_imaps && (srvc->use_sslv2 || srvc->use_sslv3 || srvc->use_tlsv1)) {
+		if (!srvc->sconf.use_imaps &&
+		    (srvc->sconf.use_sslv2 || srvc->sconf.use_sslv3 || srvc->sconf.use_tlsv1)) {
 			/* always try to select SSL support if available */
 			if (CAP(STARTTLS)) {
 				imap_exec( ctx, 0, imap_open_store_authenticate_p2, "STARTTLS" );
@@ -1658,7 +1168,7 @@ imap_open_store_authenticate_p2( imap_store_t *ctx, struct imap_cmd *cmd ATTR_UN
 {
 	if (response != RESP_OK)
 		imap_open_store_bail( ctx );
-	else if (start_tls( ctx ))
+	else if (socket_start_tls( &((imap_server_conf_t *)ctx->gen.conf)->sconf, &ctx->buf.sock ))
 		imap_open_store_ssl_bail( ctx );
 	else
 		imap_exec( ctx, 0, imap_open_store_authenticate_p3, "CAPABILITY" );
@@ -1797,8 +1307,7 @@ static void
 imap_open_store_ssl_bail( imap_store_t *ctx )
 {
 	/* This avoids that we try to send LOGOUT to an unusable socket. */
-	close( ctx->buf.sock.fd );
-	ctx->buf.sock.fd = -1;
+	socket_close( &ctx->buf.sock );
 	imap_open_store_bail( ctx );
 }
 #endif
@@ -2197,7 +1706,7 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 	 * case people forget to turn it on
 	 */
 	server->require_ssl = 1;
-	server->use_tlsv1 = 1;
+	server->sconf.use_tlsv1 = 1;
 #endif
 
 	while (getcline( cfg ) && cfg->cmd) {
@@ -2206,9 +1715,9 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 #ifdef HAVE_LIBSSL
 			if (!memcmp( "imaps:", cfg->val, 6 )) {
 				cfg->val += 6;
-				server->use_imaps = 1;
-				server->use_sslv2 = 1;
-				server->use_sslv3 = 1;
+				server->sconf.use_imaps = 1;
+				server->sconf.use_sslv2 = 1;
+				server->sconf.use_sslv3 = 1;
 			} else
 #endif
 			{
@@ -2217,37 +1726,37 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 			}
 			if (!memcmp( "//", cfg->val, 2 ))
 				cfg->val += 2;
-			server->host = nfstrdup( cfg->val );
+			server->sconf.host = nfstrdup( cfg->val );
 		}
 		else if (!strcasecmp( "User", cfg->cmd ))
 			server->user = nfstrdup( cfg->val );
 		else if (!strcasecmp( "Pass", cfg->cmd ))
 			server->pass = nfstrdup( cfg->val );
 		else if (!strcasecmp( "Port", cfg->cmd ))
-			server->port = parse_int( cfg );
+			server->sconf.port = parse_int( cfg );
 #ifdef HAVE_LIBSSL
 		else if (!strcasecmp( "CertificateFile", cfg->cmd )) {
-			server->cert_file = expand_strdup( cfg->val );
-			if (access( server->cert_file, R_OK )) {
+			server->sconf.cert_file = expand_strdup( cfg->val );
+			if (access( server->sconf.cert_file, R_OK )) {
 				error( "%s:%d: CertificateFile '%s': %s\n",
-				       cfg->file, cfg->line, server->cert_file, strerror( errno ) );
+				       cfg->file, cfg->line, server->sconf.cert_file, strerror( errno ) );
 				*err = 1;
 			}
 		} else if (!strcasecmp( "RequireSSL", cfg->cmd ))
 			server->require_ssl = parse_bool( cfg );
 		else if (!strcasecmp( "UseIMAPS", cfg->cmd ))
-			server->use_imaps = parse_bool( cfg );
+			server->sconf.use_imaps = parse_bool( cfg );
 		else if (!strcasecmp( "UseSSLv2", cfg->cmd ))
-			server->use_sslv2 = parse_bool( cfg );
+			server->sconf.use_sslv2 = parse_bool( cfg );
 		else if (!strcasecmp( "UseSSLv3", cfg->cmd ))
-			server->use_sslv3 = parse_bool( cfg );
+			server->sconf.use_sslv3 = parse_bool( cfg );
 		else if (!strcasecmp( "UseTLSv1", cfg->cmd ))
-			server->use_tlsv1 = parse_bool( cfg );
+			server->sconf.use_tlsv1 = parse_bool( cfg );
 		else if (!strcasecmp( "RequireCRAM", cfg->cmd ))
 			server->require_cram = parse_bool( cfg );
 #endif
 		else if (!strcasecmp( "Tunnel", cfg->cmd ))
-			server->tunnel = nfstrdup( cfg->val );
+			server->sconf.tunnel = nfstrdup( cfg->val );
 		else if (store) {
 			if (!strcasecmp( "Account", cfg->cmd )) {
 				for (srv = servers; srv; srv = srv->next)
@@ -2273,7 +1782,7 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 		acc_opt = 1;
 	}
 	if (!store || !store->server) {
-		if (!server->tunnel && !server->host) {
+		if (!server->sconf.tunnel && !server->sconf.host) {
 			if (store)
 				error( "IMAP store '%s' has incomplete/missing connection details\n", store->gen.name );
 			else
