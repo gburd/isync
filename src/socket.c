@@ -49,7 +49,7 @@
 #include <netdb.h>
 
 static void
-socket_perror( const char *func, Socket_t *sock, int ret )
+socket_perror( const char *func, conn_t *sock, int ret )
 {
 #ifdef HAVE_LIBSSL
 	int err;
@@ -112,7 +112,7 @@ compare_certificates( X509 *cert, X509 *peercert,
 
 /* this gets called when a certificate is to be verified */
 static int
-verify_cert( const server_conf_t *conf, Socket_t *sock )
+verify_cert( const server_conf_t *conf, conn_t *sock )
 {
 	server_conf_t *mconf = (server_conf_t *)conf;
 	SSL *ssl = sock->ssl;
@@ -242,7 +242,7 @@ init_ssl_ctx( const server_conf_t *conf )
 }
 
 int
-socket_start_tls( const server_conf_t *conf, Socket_t *sock )
+socket_start_tls( const server_conf_t *conf, conn_t *sock )
 {
 	int ret;
 	static int ssl_inited;
@@ -274,7 +274,7 @@ socket_start_tls( const server_conf_t *conf, Socket_t *sock )
 #endif /* HAVE_LIBSSL */
 
 int
-socket_connect( const server_conf_t *conf, Socket_t *sock )
+socket_connect( const server_conf_t *conf, conn_t *sock )
 {
 	struct hostent *he;
 	struct sockaddr_in addr;
@@ -339,7 +339,7 @@ socket_connect( const server_conf_t *conf, Socket_t *sock )
 }
 
 void
-socket_close( Socket_t *sock )
+socket_close( conn_t *sock )
 {
 	if (sock->fd >= 0) {
 		close( sock->fd );
@@ -354,7 +354,7 @@ socket_close( Socket_t *sock )
 }
 
 int
-socket_read( Socket_t *sock, char *buf, int len )
+socket_read( conn_t *sock, char *buf, int len )
 {
 	int n;
 
@@ -373,7 +373,7 @@ socket_read( Socket_t *sock, char *buf, int len )
 }
 
 int
-socket_write( Socket_t *sock, char *buf, int len )
+socket_write( conn_t *sock, char *buf, int len )
 {
 	int n;
 
@@ -392,7 +392,7 @@ socket_write( Socket_t *sock, char *buf, int len )
 }
 
 int
-socket_pending( Socket_t *sock )
+socket_pending( conn_t *sock )
 {
 	int num = -1;
 
@@ -409,7 +409,7 @@ socket_pending( Socket_t *sock )
 
 /* simple line buffering */
 int
-buffer_gets( buffer_t * b, char **s )
+buffer_gets( conn_t *b, char **s )
 {
 	int n;
 	int start = b->offset;
@@ -433,7 +433,7 @@ buffer_gets( buffer_t * b, char **s )
 				start = 0;
 			}
 
-			n = socket_read( &b->sock, b->buf + b->bytes,
+			n = socket_read( b, b->buf + b->bytes,
 			                 sizeof(b->buf) - b->bytes );
 
 			if (n <= 0)

@@ -78,14 +78,11 @@ typedef struct {
 #ifdef HAVE_LIBSSL
 	SSL *ssl;
 #endif
-} Socket_t;
 
-typedef struct {
-	Socket_t sock;
 	int bytes;
 	int offset;
 	char buf[1024];
-} buffer_t;
+} conn_t;
 
 typedef struct {
 	const char *file;
@@ -332,14 +329,14 @@ extern const char *Home;
 
 /* socket.c */
 
-int socket_connect( const server_conf_t *conf, Socket_t *sock );
-int socket_start_tls( const server_conf_t *conf, Socket_t *sock );
-void socket_close( Socket_t *sock );
-int socket_read( Socket_t *sock, char *buf, int len );
-int socket_write( Socket_t *sock, char *buf, int len );
-int socket_pending( Socket_t *sock );
+int socket_connect( const server_conf_t *conf, conn_t *sock );
+int socket_start_tls( const server_conf_t *conf, conn_t *sock );
+void socket_close( conn_t *sock );
+int socket_read( conn_t *sock, char *buf, int len );
+int socket_write( conn_t *sock, char *buf, int len );
+int socket_pending( conn_t *sock );
 
-int buffer_gets( buffer_t *b, char **s );
+int buffer_gets( conn_t *b, char **s );
 
 void cram( const char *challenge, const char *user, const char *pass,
            char **_final, int *_finallen );

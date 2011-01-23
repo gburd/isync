@@ -90,7 +90,7 @@ typedef struct imap_store {
 	} callbacks;
 	void *callback_aux;
 
-	buffer_t buf; /* this is BIG, so put it last */
+	conn_t conn; /* this is BIG, so put it last */
 } imap_store_t;
 
 struct imap_cmd {
@@ -244,11 +244,11 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 		else
 			printf( ">>> %d LOGIN <user> <pass>\n", cmd->tag );
 	}
-	if (socket_write( &ctx->buf.sock, buf, bufl ) != bufl)
+	if (socket_write( &ctx->conn, buf, bufl ) != bufl)
 		goto bail;
 	if (litplus) {
-		if (socket_write( &ctx->buf.sock, cmd->param.data, cmd->param.data_len ) != cmd->param.data_len ||
-		    socket_write( &ctx->buf.sock, "\r\n", 2 ) != 2)
+		if (socket_write( &ctx->conn, cmd->param.data, cmd->param.data_len ) != cmd->param.data_len ||
+		    socket_write( &ctx->conn, "\r\n", 2 ) != 2)
 			goto bail;
 		free( cmd->param.data );
 		cmd->param.data = 0;
@@ -382,7 +382,7 @@ static int
 process_imap_replies( imap_store_t *ctx )
 {
 	while (ctx->num_in_progress > max_in_progress ||
-	       socket_pending( &ctx->buf.sock ))
+	       socket_pending( &ctx->conn ))
 		if (get_cmd_result( ctx, 0 ) == RESP_CANCEL)
 			return RESP_CANCEL;
 	return RESP_OK;
@@ -447,22 +447,22 @@ parse_imap_list_l( imap_store_t *ctx, char **sp, list_t **curp, int level )
 			s = cur->val = nfmalloc( cur->len );
 
 			/* dump whats left over in the input buffer */
-			n = ctx->buf.bytes - ctx->buf.offset;
+			n = ctx->conn.bytes - ctx->conn.offset;
 
 			if (n > bytes)
 				/* the entire message fit in the buffer */
 				n = bytes;
 
-			memcpy( s, ctx->buf.buf + ctx->buf.offset, n );
+			memcpy( s, ctx->conn.buf + ctx->conn.offset, n );
 			s += n;
 			bytes -= n;
 
 			/* mark that we used part of the buffer */
-			ctx->buf.offset += n;
+			ctx->conn.offset += n;
 
 			/* now read the rest of the message */
 			while (bytes > 0) {
-				if ((n = socket_read( &ctx->buf.sock, s, bytes )) <= 0)
+				if ((n = socket_read( &ctx->conn, s, bytes )) <= 0)
 					goto bail;
 				s += n;
 				bytes -= n;
@@ -473,7 +473,7 @@ parse_imap_list_l( imap_store_t *ctx, char **sp, list_t **curp, int level )
 				puts( "=========" );
 			}
 
-			if (buffer_gets( &ctx->buf, &s ))
+			if (buffer_gets( &ctx->conn, &s ))
 				goto bail;
 		} else if (*s == '"') {
 			/* quoted string */
@@ -766,7 +766,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 
 	greeted = ctx->greeting;
 	for (;;) {
-		if (buffer_gets( &ctx->buf, &cmd ))
+		if (buffer_gets( &ctx->conn, &cmd ))
 			break;
 
 		arg = next_arg( &cmd );
@@ -824,7 +824,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 			if (cmdp->param.data) {
 				if (cmdp->param.to_trash)
 					ctx->trashnc = 0; /* Can't get NO [TRYCREATE] any more. */
-				n = socket_write( &ctx->buf.sock, cmdp->param.data, cmdp->param.data_len );
+				n = socket_write( &ctx->conn, cmdp->param.data, cmdp->param.data_len );
 				free( cmdp->param.data );
 				cmdp->param.data = 0;
 				if (n != (int)cmdp->param.data_len)
@@ -836,7 +836,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				error( "IMAP error: unexpected command continuation request\n" );
 				break;
 			}
-			if (socket_write( &ctx->buf.sock, "\r\n", 2 ) != 2)
+			if (socket_write( &ctx->conn, "\r\n", 2 ) != 2)
 				break;
 			if (!cmdp->param.cont)
 				ctx->literal_pending = 0;
@@ -926,7 +926,7 @@ imap_cancel_store( store_t *gctx )
 {
 	imap_store_t *ctx = (imap_store_t *)gctx;
 
-	socket_close( &ctx->buf.sock );
+	socket_close( &ctx->conn );
 	free_generic_messages( ctx->gen.msgs );
 	free_string_list( ctx->gen.boxes );
 	free_list( ctx->ns_personal );
@@ -1029,7 +1029,7 @@ do_cram_auth( imap_store_t *ctx, struct imap_cmd *cmdp, const char *prompt )
 
 	if (DFlags & VERBOSE)
 		printf( ">+> %s\n", resp );
-	n = socket_write( &ctx->buf.sock, resp, l );
+	n = socket_write( &ctx->conn, resp, l );
 	free( resp );
 	if (n != l)
 		return -1;
@@ -1082,19 +1082,19 @@ imap_open_store( store_conf_t *conf,
 
 	ctx = nfcalloc( sizeof(*ctx) );
 	ctx->gen.conf = conf;
-	ctx->buf.sock.fd = -1;
+	ctx->conn.fd = -1;
 	ctx->ref_count = 1;
 	ctx->callbacks.imap_open = cb;
 	ctx->callback_aux = aux;
 	set_bad_callback( &ctx->gen, (void (*)(void *))imap_open_store_bail, ctx );
 	ctx->in_progress_append = &ctx->in_progress;
 
-	if (!socket_connect( &srvc->sconf, &ctx->buf.sock ))
+	if (!socket_connect( &srvc->sconf, &ctx->conn ))
 		goto bail;
 
 #ifdef HAVE_LIBSSL
 	if (srvc->sconf.use_imaps) {
-		if (socket_start_tls( &srvc->sconf, &ctx->buf.sock )) {
+		if (socket_start_tls( &srvc->sconf, &ctx->conn )) {
 			imap_open_store_ssl_bail( ctx );
 			return;
 		}
@@ -1168,7 +1168,7 @@ imap_open_store_authenticate_p2( imap_store_t *ctx, struct imap_cmd *cmd ATTR_UN
 {
 	if (response != RESP_OK)
 		imap_open_store_bail( ctx );
-	else if (socket_start_tls( &((imap_server_conf_t *)ctx->gen.conf)->sconf, &ctx->buf.sock ))
+	else if (socket_start_tls( &((imap_server_conf_t *)ctx->gen.conf)->sconf, &ctx->conn ))
 		imap_open_store_ssl_bail( ctx );
 	else
 		imap_exec( ctx, 0, imap_open_store_authenticate_p3, "CAPABILITY" );
@@ -1233,7 +1233,7 @@ imap_open_store_authenticate2( imap_store_t *ctx )
 		goto bail;
 	}
 #ifdef HAVE_LIBSSL
-	if (!ctx->buf.sock.ssl)
+	if (!ctx->conn.ssl)
 #endif
 		warn( "*** IMAP Warning *** Password is being sent in the clear\n" );
 	imap_exec( ctx, 0, imap_open_store_authenticate2_p2,
@@ -1307,7 +1307,7 @@ static void
 imap_open_store_ssl_bail( imap_store_t *ctx )
 {
 	/* This avoids that we try to send LOGOUT to an unusable socket. */
-	socket_close( &ctx->buf.sock );
+	socket_close( &ctx->conn );
 	imap_open_store_bail( ctx );
 }
 #endif
