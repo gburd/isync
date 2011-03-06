@@ -1134,6 +1134,8 @@ imap_cancel_store( store_t *gctx )
 	if (ctx->buf.sock.fd >= 0)
 		close( ctx->buf.sock.fd );
 #ifdef HAVE_LIBSSL
+	if (ctx->buf.sock.ssl)
+		SSL_free( ctx->buf.sock.ssl );
 	if (ctx->SSLContext)
 		SSL_CTX_free( ctx->SSLContext );
 #endif
