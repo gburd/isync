@@ -89,7 +89,7 @@ typedef struct imap_store {
 	unsigned caps; /* CAPABILITY results */
 	parse_list_state_t parse_list_sts;
 	/* command queue */
-	int nexttag, num_in_progress, literal_pending;
+	int nexttag, num_in_progress;
 	struct imap_cmd *pending, **pending_append;
 	struct imap_cmd *in_progress, **in_progress_append;
 
@@ -260,8 +260,6 @@ send_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd )
 		if (socket_write( &ctx->conn, p, cmd->param.data_len, GiveOwn ) < 0 ||
 		    socket_write( &ctx->conn, "\r\n", 2, KeepOwn ) < 0)
 			goto bail;
-	} else if (cmd->param.cont || cmd->param.data) {
-		ctx->literal_pending = 1;
 	}
 	if (cmd->param.to_trash && ctx->trashnc == TrashUnknown)
 		ctx->trashnc = TrashChecking;
@@ -279,8 +277,13 @@ send_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd )
 static int
 cmd_submittable( imap_store_t *ctx, struct imap_cmd *cmd )
 {
+	struct imap_cmd *cmdp;
+
 	return !ctx->conn.write_buf &&
-	       !ctx->literal_pending &&
+	       !(ctx->in_progress &&
+	         (cmdp = (struct imap_cmd *)((char *)ctx->in_progress_append -
+	                                     offsetof(struct imap_cmd, next)), 1) &&
+	         (cmdp->param.cont || cmdp->param.data)) &&
 	       !(cmd->param.to_trash && ctx->trashnc == TrashChecking) &&
 	       ctx->num_in_progress < ((imap_store_conf_t *)ctx->gen.conf)->server->max_in_progress;
 }
@@ -908,8 +911,6 @@ imap_socket_read( void *aux )
 			}
 			if (socket_write( &ctx->conn, "\r\n", 2, KeepOwn ) < 0)
 				return;
-			if (!cmdp->param.cont)
-				ctx->literal_pending = 0;
 		} else {
 			tag = atoi( arg );
 			for (pcmdp = &ctx->in_progress; (cmdp = *pcmdp); pcmdp = &cmdp->next)
@@ -921,8 +922,6 @@ imap_socket_read( void *aux )
 			if (!(*pcmdp = cmdp->next))
 				ctx->in_progress_append = pcmdp;
 			ctx->num_in_progress--;
-			if (cmdp->param.cont || cmdp->param.data)
-				ctx->literal_pending = 0;
 			arg = next_arg( &cmd );
 			if (!strcmp( "OK", arg )) {
 				if (cmdp->param.to_trash)
