@@ -1040,8 +1040,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 		} else if (*arg == '+') {
 			/* This can happen only with the last command underway, as
 			   it enforces a round-trip. */
-			cmdp = (struct imap_cmd *)((char *)ctx->in_progress_append -
-			       offsetof(struct imap_cmd, next));
+			cmdp = ctx->in_progress;
 			if (cmdp->param.data) {
 				n = socket_write( &ctx->buf.sock, cmdp->param.data, cmdp->param.data_len );
 				free( cmdp->param.data );
