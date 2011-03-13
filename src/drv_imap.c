@@ -160,24 +160,24 @@ struct imap_cmd_refcounted {
 
 enum CAPABILITY {
 	NOLOGIN = 0,
-	UIDPLUS,
-	LITERALPLUS,
-	NAMESPACE,
 #ifdef HAVE_LIBSSL
 	CRAM,
 	STARTTLS,
 #endif
+	UIDPLUS,
+	LITERALPLUS,
+	NAMESPACE
 };
 
 static const char *cap_list[] = {
 	"LOGINDISABLED",
-	"UIDPLUS",
-	"LITERAL+",
-	"NAMESPACE",
 #ifdef HAVE_LIBSSL
 	"AUTH=CRAM-MD5",
 	"STARTTLS",
 #endif
+	"UIDPLUS",
+	"LITERAL+",
+	"NAMESPACE"
 };
 
 #define RESP_OK       0

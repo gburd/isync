@@ -54,7 +54,7 @@ static const char *subdirs[] = { "cur", "new" };
 static struct flock lck;
 static DBT key, value;
 
-static inline int
+static int
 convert( const char *box, int altmap )
 {
 	DB *db;
