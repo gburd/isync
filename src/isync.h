@@ -397,6 +397,20 @@ void sort_ints( int *arr, int len );
 void arc4_init( void );
 unsigned char arc4_getbyte( void );
 
+#ifdef HAVE_SYS_POLL_H
+# include <sys/poll.h>
+#else
+# define POLLIN 1
+# define POLLOUT 4
+# define POLLERR 8
+#endif
+
+void add_fd( int fd, void (*cb)( int events, void *aux ), void *aux );
+void conf_fd( int fd, int and_events, int or_events );
+void fake_fd( int fd, int events );
+void del_fd( int fd );
+void main_loop( void );
+
 /* sync.c */
 
 extern const char *str_ms[2], *str_hl[2];

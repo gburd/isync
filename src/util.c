@@ -23,6 +23,7 @@
 
 #include "isync.h"
 
+#include <assert.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -410,4 +411,170 @@ arc4_getbyte( void )
 	rs.s[rs.i] = sj;
 	rs.s[rs.j] = si;
 	return rs.s[(si + sj) & 0xff];
+}
+
+
+#ifdef HAVE_SYS_POLL_H
+static struct pollfd *pollfds;
+#else
+# ifdef HAVE_SYS_SELECT_H
+#  include <sys/select.h>
+# endif
+# define pollfds fdparms
+#endif
+static struct {
+	void (*cb)( int what, void *aux );
+	void *aux;
+#ifndef HAVE_SYS_POLL_H
+	int fd, events;
+#endif
+	int faked;
+} *fdparms;
+static int npolls, rpolls, changed;
+
+static int
+find_fd( int fd )
+{
+	int n;
+
+	for (n = 0; n < npolls; n++)
+		if (pollfds[n].fd == fd)
+			return n;
+	return -1;
+}
+
+void
+add_fd( int fd, void (*cb)( int events, void *aux ), void *aux )
+{
+	int n;
+
+	assert( find_fd( fd ) < 0 );
+	n = npolls++;
+	if (rpolls < npolls) {
+		rpolls = npolls;
+#ifdef HAVE_SYS_POLL_H
+		pollfds = nfrealloc(pollfds, npolls * sizeof(*pollfds));
+#endif
+		fdparms = nfrealloc(fdparms, npolls * sizeof(*fdparms));
+	}
+	pollfds[n].fd = fd;
+	pollfds[n].events = 0; /* POLLERR & POLLHUP implicit */
+	fdparms[n].faked = 0;
+	fdparms[n].cb = cb;
+	fdparms[n].aux = aux;
+	changed = 1;
+}
+
+void
+conf_fd( int fd, int and_events, int or_events )
+{
+	int n = find_fd( fd );
+	assert( n >= 0 );
+	pollfds[n].events = (pollfds[n].events & and_events) | or_events;
+}
+
+void
+fake_fd( int fd, int events )
+{
+	int n = find_fd( fd );
+	assert( n >= 0 );
+	fdparms[n].faked |= events;
+}
+
+void
+del_fd( int fd )
+{
+	int n = find_fd( fd );
+	assert( n >= 0 );
+	npolls--;
+#ifdef HAVE_SYS_POLL_H
+	memmove(pollfds + n, pollfds + n + 1, (npolls - n) * sizeof(*pollfds));
+#endif
+	memmove(fdparms + n, fdparms + n + 1, (npolls - n) * sizeof(*fdparms));
+	changed = 1;
+}
+
+#define shifted_bit(in, from, to) \
+	(((unsigned)(in) & from) \
+		/ (from > to ? from / to : 1) \
+		* (to > from ? to / from : 1))
+
+static void
+event_wait( void )
+{
+	int m, n;
+
+#ifdef HAVE_SYS_POLL_H
+	int timeout = -1;
+	for (n = 0; n < npolls; n++)
+		if (fdparms[n].faked) {
+			timeout = 0;
+			break;
+		}
+	if (poll( pollfds, npolls, timeout ) < 0) {
+		perror( "poll() failed in event loop" );
+		abort();
+	}
+	for (n = 0; n < npolls; n++)
+		if ((m = pollfds[n].revents | fdparms[n].faked)) {
+			assert( !(m & POLLNVAL) );
+			fdparms[n].faked = 0;
+			fdparms[n].cb( m | shifted_bit( m, POLLHUP, POLLIN ), fdparms[n].aux );
+			if (changed) {
+				changed = 0;
+				break;
+			}
+		}
+#else
+	struct timeval *timeout = 0;
+	static struct timeval null_tv;
+	fd_set rfds, wfds, efds;
+	int fd;
+
+	FD_ZERO( &rfds );
+	FD_ZERO( &wfds );
+	FD_ZERO( &efds );
+	m = -1;
+	for (n = 0; n < npolls; n++) {
+		if (fdparms[n].faked)
+			timeout = &null_tv;
+		fd = fdparms[n].fd;
+		if (fdparms[n].events & POLLIN)
+			FD_SET( fd, &rfds );
+		if (fdparms[n].events & POLLOUT)
+			FD_SET( fd, &wfds );
+		FD_SET( fd, &efds );
+		if (fd > m)
+			m = fd;
+	}
+	if (select( m + 1, &rfds, &wfds, &efds, timeout ) < 0) {
+		perror( "select() failed in event loop" );
+		abort();
+	}
+	for (n = 0; n < npolls; n++) {
+		fd = fdparms[n].fd;
+		m = fdparms[n].faked;
+		if (FD_ISSET( fd, &rfds ))
+			m |= POLLIN;
+		if (FD_ISSET( fd, &wfds ))
+			m |= POLLOUT;
+		if (FD_ISSET( fd, &efds ))
+			m |= POLLERR;
+		if (m) {
+			fdparms[n].faked = 0;
+			fdparms[n].cb( m, fdparms[n].aux );
+			if (changed) {
+				changed = 0;
+				break;
+			}
+		}
+	}
+#endif
+}
+
+void
+main_loop( void )
+{
+	while (npolls)
+		event_wait();
 }

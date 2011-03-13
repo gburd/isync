@@ -485,6 +485,7 @@ main( int argc, char **argv )
 	mvars->argv = argv;
 	mvars->cben = 1;
 	sync_chans( mvars, E_START );
+	main_loop();
 	return mvars->ret;
 }
 

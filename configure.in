@@ -9,7 +9,7 @@ if test "$GCC" = yes; then
     CFLAGS="$CFLAGS -pipe -W -Wall -Wshadow -Wstrict-prototypes"
 fi
 
-AC_CHECK_HEADERS([sys/filio.h])
+AC_CHECK_HEADERS(sys/filio.h sys/poll.h sys/select.h)
 AC_CHECK_FUNCS(vasprintf)
 
 AC_CHECK_LIB(socket, socket, [SOCK_LIBS="-lsocket"])
