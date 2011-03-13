@@ -373,7 +373,7 @@ socket_read( conn_t *sock, char *buf, int len )
 }
 
 int
-socket_write( conn_t *sock, char *buf, int len )
+socket_write( conn_t *sock, char *buf, int len, ownership_t takeOwn )
 {
 	int n;
 
@@ -383,6 +383,8 @@ socket_write( conn_t *sock, char *buf, int len )
 		sock->ssl ? SSL_write( sock->ssl, buf, len ) :
 #endif
 		write( sock->fd, buf, len );
+	if (takeOwn == GiveOwn)
+		free( buf );
 	if (n != len) {
 		socket_perror( "write", sock, n );
 		close( sock->fd );

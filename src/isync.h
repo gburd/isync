@@ -333,7 +333,8 @@ int socket_connect( const server_conf_t *conf, conn_t *sock );
 int socket_start_tls( const server_conf_t *conf, conn_t *sock );
 void socket_close( conn_t *sock );
 int socket_read( conn_t *sock, char *buf, int len );
-int socket_write( conn_t *sock, char *buf, int len );
+typedef enum { KeepOwn = 0, GiveOwn } ownership_t;
+int socket_write( conn_t *sock, char *buf, int len, ownership_t takeOwn );
 int socket_pending( conn_t *sock );
 
 int buffer_gets( conn_t *b, char **s );

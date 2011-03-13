@@ -244,14 +244,14 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 		else
 			printf( ">>> %d LOGIN <user> <pass>\n", cmd->tag );
 	}
-	if (socket_write( &ctx->conn, buf, bufl ) < 0)
+	if (socket_write( &ctx->conn, buf, bufl, KeepOwn ) < 0)
 		goto bail;
 	if (litplus) {
-		if (socket_write( &ctx->conn, cmd->param.data, cmd->param.data_len ) < 0 ||
-		    socket_write( &ctx->conn, "\r\n", 2 ) < 0)
-			goto bail;
-		free( cmd->param.data );
+		char *p = cmd->param.data;
 		cmd->param.data = 0;
+		if (socket_write( &ctx->conn, p, cmd->param.data_len, GiveOwn ) < 0 ||
+		    socket_write( &ctx->conn, "\r\n", 2, KeepOwn ) < 0)
+			goto bail;
 	} else if (cmd->param.cont || cmd->param.data) {
 		ctx->literal_pending = 1;
 	}
@@ -777,7 +777,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 {
 	struct imap_cmd *cmdp, **pcmdp;
 	char *cmd, *arg, *arg1, *p;
-	int n, resp, resp2, tag, greeted;
+	int resp, resp2, tag, greeted;
 
 	greeted = ctx->greeting;
 	for (;;) {
@@ -839,10 +839,9 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 			if (cmdp->param.data) {
 				if (cmdp->param.to_trash)
 					ctx->trashnc = 0; /* Can't get NO [TRYCREATE] any more. */
-				n = socket_write( &ctx->conn, cmdp->param.data, cmdp->param.data_len );
-				free( cmdp->param.data );
+				p = cmdp->param.data;
 				cmdp->param.data = 0;
-				if (n < 0)
+				if (socket_write( &ctx->conn, p, cmdp->param.data_len, GiveOwn ) < 0)
 					break;
 			} else if (cmdp->param.cont) {
 				if (cmdp->param.cont( ctx, cmdp, cmd ))
@@ -851,7 +850,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				error( "IMAP error: unexpected command continuation request\n" );
 				break;
 			}
-			if (socket_write( &ctx->conn, "\r\n", 2 ) < 0)
+			if (socket_write( &ctx->conn, "\r\n", 2, KeepOwn ) < 0)
 				break;
 			if (!cmdp->param.cont)
 				ctx->literal_pending = 0;
@@ -1039,18 +1038,15 @@ do_cram_auth( imap_store_t *ctx, struct imap_cmd *cmdp, const char *prompt )
 {
 	imap_server_conf_t *srvc = ((imap_store_conf_t *)ctx->gen.conf)->server;
 	char *resp;
-	int n, l;
+	int l;
+
+	cmdp->param.cont = 0;
 
 	cram( prompt, srvc->user, srvc->pass, &resp, &l );
 
 	if (DFlags & VERBOSE)
 		printf( ">+> %s\n", resp );
-	n = socket_write( &ctx->conn, resp, l );
-	free( resp );
-	if (n != l)
-		return -1;
-	cmdp->param.cont = 0;
-	return 0;
+	return socket_write( &ctx->conn, resp, l, GiveOwn );
 }
 #endif
 
