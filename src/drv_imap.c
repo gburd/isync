@@ -244,11 +244,11 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 		else
 			printf( ">>> %d LOGIN <user> <pass>\n", cmd->tag );
 	}
-	if (socket_write( &ctx->conn, buf, bufl ) != bufl)
+	if (socket_write( &ctx->conn, buf, bufl ) < 0)
 		goto bail;
 	if (litplus) {
-		if (socket_write( &ctx->conn, cmd->param.data, cmd->param.data_len ) != cmd->param.data_len ||
-		    socket_write( &ctx->conn, "\r\n", 2 ) != 2)
+		if (socket_write( &ctx->conn, cmd->param.data, cmd->param.data_len ) < 0 ||
+		    socket_write( &ctx->conn, "\r\n", 2 ) < 0)
 			goto bail;
 		free( cmd->param.data );
 		cmd->param.data = 0;
@@ -842,7 +842,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				n = socket_write( &ctx->conn, cmdp->param.data, cmdp->param.data_len );
 				free( cmdp->param.data );
 				cmdp->param.data = 0;
-				if (n != (int)cmdp->param.data_len)
+				if (n < 0)
 					break;
 			} else if (cmdp->param.cont) {
 				if (cmdp->param.cont( ctx, cmdp, cmd ))
@@ -851,7 +851,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				error( "IMAP error: unexpected command continuation request\n" );
 				break;
 			}
-			if (socket_write( &ctx->conn, "\r\n", 2 ) != 2)
+			if (socket_write( &ctx->conn, "\r\n", 2 ) < 0)
 				break;
 			if (!cmdp->param.cont)
 				ctx->literal_pending = 0;

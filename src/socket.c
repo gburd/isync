@@ -387,8 +387,9 @@ socket_write( conn_t *sock, char *buf, int len )
 		socket_perror( "write", sock, n );
 		close( sock->fd );
 		sock->fd = -1;
+		return -1;
 	}
-	return n;
+	return 0;
 }
 
 int
