@@ -129,7 +129,7 @@ typedef struct imap_store {
 #endif
 
 	/* Used during sequential operations like connect */
-	int preauth;
+	enum { GreetingPending = 0, GreetingBad, GreetingOk, GreetingPreauth } greeting;
 	union {
 		void (*imap_open)( store_t *srv, void *aux );
 	} callbacks;
@@ -1098,6 +1098,7 @@ struct imap_cmd_trycreate {
 	struct imap_cmd *orig_cmd;
 };
 
+static void imap_open_store_greeted( imap_store_t * );
 static void get_cmd_result_p2( imap_store_t *, struct imap_cmd *, int );
 
 static int
@@ -1105,8 +1106,9 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 {
 	struct imap_cmd *cmdp, **pcmdp;
 	char *cmd, *arg, *arg1, *p;
-	int n, resp, resp2, tag;
+	int n, resp, resp2, tag, greeted;
 
+	greeted = ctx->greeting;
 	for (;;) {
 		if (buffer_gets( &ctx->buf, &cmd ))
 			break;
@@ -1123,8 +1125,14 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				ctx->ns_personal = parse_list( &cmd );
 				ctx->ns_other = parse_list( &cmd );
 				ctx->ns_shared = parse_list( &cmd );
-			} else if (!strcmp( "OK", arg ) || !strcmp( "BAD", arg ) ||
-			           !strcmp( "NO", arg ) || !strcmp( "BYE", arg )) {
+			} else if (ctx->greeting == GreetingPending && !strcmp( "PREAUTH", arg )) {
+				ctx->greeting = GreetingPreauth;
+				parse_response_code( ctx, 0, cmd );
+			} else if (!strcmp( "OK", arg )) {
+				ctx->greeting = GreetingOk;
+				parse_response_code( ctx, 0, cmd );
+			} else if (!strcmp( "BAD", arg ) || !strcmp( "NO", arg ) || !strcmp( "BYE", arg )) {
+				ctx->greeting = GreetingBad;
 				parse_response_code( ctx, 0, cmd );
 			} else if (!strcmp( "CAPABILITY", arg ))
 				parse_capability( ctx, cmd );
@@ -1144,6 +1152,11 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 			} else {
 				error( "IMAP error: unrecognized untagged response '%s'\n", arg );
 				break; /* this may mean anything, so prefer not to spam the log */
+			}
+			if (greeted == GreetingPending) {
+				imap_ref( ctx );
+				imap_open_store_greeted( ctx );
+				return imap_deref( ctx ) ? RESP_CANCEL : RESP_OK;
 			}
 		} else if (!ctx->in_progress) {
 			error( "IMAP error: unexpected reply: %s %s\n", arg, cmd ? cmd : "" );
@@ -1482,7 +1495,6 @@ imap_open_store( store_conf_t *conf,
 	imap_server_conf_t *srvc = cfg->server;
 	imap_store_t *ctx;
 	store_t **ctxp;
-	char *arg, *rsp;
 	struct hostent *he;
 	struct sockaddr_in addr;
 	int s, a[2];
@@ -1579,30 +1591,26 @@ imap_open_store( store_conf_t *conf,
 		}
 	}
 #endif
-
-	/* read the greeting string */
-	if (buffer_gets( &ctx->buf, &rsp ))
-		goto bail;
-	arg = next_arg( &rsp );
-	if (!arg || *arg != '*' || (arg = next_arg( &rsp )) == NULL) {
-		error( "IMAP error: invalid greeting response\n" );
-		goto bail;
-	}
-	if (!strcmp( "PREAUTH", arg ))
-		ctx->preauth = 1;
-	else if (strcmp( "OK", arg ) != 0) {
-		error( "IMAP error: unknown greeting response\n" );
-		goto bail;
-	}
-	parse_response_code( ctx, 0, rsp );
-	if (!ctx->caps)
-		imap_exec( ctx, 0, imap_open_store_p2, "CAPABILITY" );
-	else
-		imap_open_store_authenticate( ctx );
+	get_cmd_result( ctx, 0 );
 	return;
 
   bail:
 	imap_open_store_bail( ctx );
+}
+
+static void
+imap_open_store_greeted( imap_store_t *ctx )
+{
+	if (ctx->greeting == GreetingBad) {
+		error( "IMAP error: unknown greeting response\n" );
+		imap_open_store_bail( ctx );
+		return;
+	}
+
+	if (!ctx->caps)
+		imap_exec( ctx, 0, imap_open_store_p2, "CAPABILITY" );
+	else
+		imap_open_store_authenticate( ctx );
 }
 
 static void
@@ -1617,7 +1625,7 @@ imap_open_store_p2( imap_store_t *ctx, struct imap_cmd *cmd ATTR_UNUSED, int res
 static void
 imap_open_store_authenticate( imap_store_t *ctx )
 {
-	if (!ctx->preauth) {
+	if (ctx->greeting != GreetingPreauth) {
 #ifdef HAVE_LIBSSL
 		imap_store_conf_t *cfg = (imap_store_conf_t *)ctx->gen.conf;
 		imap_server_conf_t *srvc = cfg->server;
