@@ -377,8 +377,6 @@ socket_fill( conn_t *sock )
 		read( sock->fd, buf, len );
 	if (n <= 0) {
 		socket_perror( "read", sock, n );
-		close( sock->fd );
-		sock->fd = -1;
 		return -1;
 	} else {
 		sock->bytes += n;
@@ -443,8 +441,6 @@ socket_write( conn_t *sock, char *buf, int len, ownership_t takeOwn )
 		free( buf );
 	if (n != len) {
 		socket_perror( "write", sock, n );
-		close( sock->fd );
-		sock->fd = -1;
 		return -1;
 	}
 	return 0;
