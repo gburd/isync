@@ -283,6 +283,21 @@ submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd, const char *fmt, ... )
 	return ret;
 }
 
+static void
+cancel_submitted_imap_cmds( imap_store_t *ctx )
+{
+	struct imap_cmd *cmd;
+
+	while ((cmd = ctx->in_progress)) {
+		ctx->in_progress = cmd->next;
+		/* don't update num_in_progress and in_progress_append - store is dead */
+		cmd->param.done( ctx, cmd, RESP_CANCEL );
+		free( cmd->param.data );
+		free( cmd->cmd );
+		free( cmd );
+	}
+}
+
 static int
 imap_exec( imap_store_t *ctx, struct imap_cmd *cmdp,
            void (*done)( imap_store_t *ctx, struct imap_cmd *cmd, int response ),
@@ -927,6 +942,7 @@ imap_cancel_store( store_t *gctx )
 	imap_store_t *ctx = (imap_store_t *)gctx;
 
 	socket_close( &ctx->conn );
+	cancel_submitted_imap_cmds( ctx );
 	free_generic_messages( ctx->gen.msgs );
 	free_string_list( ctx->gen.boxes );
 	free_list( ctx->ns_personal );
