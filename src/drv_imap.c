@@ -428,8 +428,10 @@ imap_refcounted_new_cmd( struct imap_cmd_refcounted_state *sts )
 static void
 imap_refcounted_done( struct imap_cmd_refcounted_state *sts )
 {
-	sts->callback( sts->ret_val, sts->callback_aux );
-	free( sts );
+	if (!--sts->ref_count) {
+		sts->callback( sts->ret_val, sts->callback_aux );
+		free( sts );
+	}
 }
 
 static int
@@ -1497,8 +1499,7 @@ imap_load( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 		}
 	  done:
 		free( excs );
-		if (!--sts->ref_count)
-			imap_refcounted_done( sts );
+		imap_refcounted_done( sts );
 	}
 }
 
@@ -1525,8 +1526,7 @@ imap_load_p2( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int response 
 			sts->ret_val = DRV_BOX_BAD;
 		break;
 	}
-	if (!--sts->ref_count)
-		imap_refcounted_done( sts );
+	imap_refcounted_done( sts );
 }
 
 /******************* imap_fetch_msg *******************/
@@ -1595,8 +1595,7 @@ imap_set_flags( store_t *gctx, message_t *msg, int uid, int add, int del,
 		struct imap_cmd_refcounted_state *sts = imap_refcounted_new_state( cb, aux );
 		if ((add && imap_flags_helper( ctx, uid, '+', add, sts ) < 0) ||
 		    (del && imap_flags_helper( ctx, uid, '-', del, sts ) < 0)) {}
-		if (!--sts->ref_count)
-			imap_refcounted_done( sts );
+		imap_refcounted_done( sts );
 	} else {
 		cb( DRV_OK, aux );
 	}
@@ -1615,8 +1614,7 @@ imap_set_flags_p2( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int resp
 			sts->ret_val = DRV_MSG_BAD;
 		break;
 	}
-	if (!--sts->ref_count)
-		imap_refcounted_done( sts );
+	imap_refcounted_done( sts );
 }
 
 /******************* imap_close *******************/
