@@ -1066,7 +1066,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 			if (!cmdp->param.cont)
 				ctx->literal_pending = 0;
 			if (!tcmd)
-				return DRV_OK;
+				return RESP_OK;
 		} else {
 			tag = atoi( arg );
 			for (pcmdp = &ctx->in_progress; (cmdp = *pcmdp); pcmdp = &cmdp->next)
@@ -1084,7 +1084,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 			if (!strcmp( "OK", arg )) {
 				if (cmdp->param.to_trash)
 					ctx->trashnc = 0; /* Can't get NO [TRYCREATE] any more. */
-				resp = DRV_OK;
+				resp = RESP_OK;
 			} else {
 				if (!strcmp( "NO", arg )) {
 					if (cmdp->param.create && cmd && (cmdp->param.trycreate || !memcmp( cmd, "[TRYCREATE]", 11 ))) { /* SELECT, APPEND or UID COPY */
