@@ -503,7 +503,8 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 	char buf[1024];
 
 	while (ctx->literal_pending)
-		get_cmd_result( ctx, 0 );
+		if (get_cmd_result( ctx, 0 ) == RESP_BAD)
+			goto bail;
 
 	if (!cmd)
 		cmd = new_imap_cmd();
@@ -625,12 +626,14 @@ drain_imap_replies( imap_store_t *ctx )
 }
 */
 
-static void
+static int
 process_imap_replies( imap_store_t *ctx )
 {
 	while (ctx->num_in_progress > max_in_progress ||
 	       socket_pending( &ctx->buf.sock ))
-		get_cmd_result( ctx, 0 );
+		if (get_cmd_result( ctx, 0 ) == RESP_BAD)
+			return RESP_BAD;
+	return RESP_OK;
 }
 
 static int
@@ -1616,8 +1619,7 @@ imap_flags_helper( imap_store_t *ctx, int uid, char what, int flags)
 	buf[imap_make_flags( flags, buf )] = 0;
 	if (!submit_imap_cmd( ctx, 0, "UID STORE %d %cFLAGS.SILENT %s", uid, what, buf ))
 		return DRV_STORE_BAD;
-	process_imap_replies( ctx );
-	return DRV_OK;
+	return process_imap_replies( ctx ) == RESP_BAD ? DRV_STORE_BAD : DRV_OK;
 }
 
 static int
