@@ -280,15 +280,16 @@ maildir_validate( const char *prefix, const char *box, int create, maildir_store
 		time( &now );
 		while ((entry = readdir( dirp ))) {
 			nfsnprintf( buf + bl, sizeof(buf) - bl, "%s", entry->d_name );
-			if (stat( buf, &st ))
-				error( "Maildir error: stat: %s: %s (errno %d)\n",
-				       buf, strerror(errno), errno );
-			else if (S_ISREG(st.st_mode) && now - st.st_ctime >= _24_HOURS) {
+			if (stat( buf, &st )) {
+				if (errno != ENOENT)
+					error( "Maildir error: stat: %s: %s (errno %d)\n",
+					       buf, strerror(errno), errno );
+			} else if (S_ISREG(st.st_mode) && now - st.st_ctime >= _24_HOURS) {
 				/* this should happen infrequently enough that it won't be
 				 * bothersome to the user to display when it occurs.
 				 */
 				info( "Maildir notice: removing stale file %s\n", buf );
-				if (unlink( buf ))
+				if (unlink( buf ) && errno != ENOENT)
 					error( "Maildir error: unlink: %s: %s (errno %d)\n",
 					       buf, strerror(errno), errno );
 			}
