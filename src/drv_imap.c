@@ -40,6 +40,7 @@ typedef struct imap_server_conf {
 	server_conf_t sconf;
 	char *user;
 	char *pass;
+	int max_in_progress;
 #ifdef HAVE_LIBSSL
 	unsigned require_ssl:1;
 	unsigned require_cram:1;
@@ -67,7 +68,6 @@ typedef struct _list {
 } list_t;
 
 struct imap_cmd;
-#define max_in_progress 50 /* make this configurable? */
 
 typedef struct imap_store {
 	store_t gen;
@@ -396,7 +396,7 @@ drain_imap_replies( imap_store_t *ctx )
 static int
 process_imap_replies( imap_store_t *ctx )
 {
-	while (ctx->num_in_progress > max_in_progress ||
+	while (ctx->num_in_progress > ((imap_store_conf_t *)ctx->gen.conf)->server->max_in_progress ||
 	       socket_pending( &ctx->conn ))
 		if (get_cmd_result( ctx, 0 ) == RESP_CANCEL)
 			return RESP_CANCEL;
@@ -1724,6 +1724,7 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 	server->require_ssl = 1;
 	server->sconf.use_tlsv1 = 1;
 #endif
+	server->max_in_progress = 50;
 
 	while (getcline( cfg ) && cfg->cmd) {
 		if (!strcasecmp( "Host", cfg->cmd )) {
@@ -1750,6 +1751,12 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 			server->pass = nfstrdup( cfg->val );
 		else if (!strcasecmp( "Port", cfg->cmd ))
 			server->sconf.port = parse_int( cfg );
+		else if (!strcasecmp( "PipelineDepth", cfg->cmd )) {
+			if ((server->max_in_progress = parse_int( cfg )) < 1) {
+				error( "%s:%d: PipelineDepth must be at least 1\n", cfg->file, cfg->line );
+				*err = 1;
+			}
+		}
 #ifdef HAVE_LIBSSL
 		else if (!strcasecmp( "CertificateFile", cfg->cmd )) {
 			server->sconf.cert_file = expand_strdup( cfg->val );

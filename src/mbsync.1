@@ -277,6 +277,15 @@ Use SSLv3 for communication with the IMAP server over SSL?
 Use TLSv1 for communication with the IMAP server over SSL?
 (Default: \fIyes\fR)
 ..
+.TP
+\fBPipelineDepth\fR \fIdepth\fR
+Maximum number of IMAP commands which can be simultaneously in flight.
+Setting this to \fI1\fR disables pipelining.
+Setting it to a too big value may deadlock isync.
+Currently, this affects only a few commands.
+This is mostly a debugging only option.
+(Default: \fI50\fR)
+..
 .SS IMAP Stores
 The reference point for relative \fBPath\fRs is whatever the server likes it
 to be; probably the user's $HOME or $HOME/Mail on that server. The location
