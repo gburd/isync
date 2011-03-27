@@ -204,6 +204,15 @@ new_imap_cmd( int size )
 	cmdp->gen.callback = cb; \
 	cmdp->gen.callback_aux = aux;
 
+static void
+done_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd, int response )
+{
+	cmd->param.done( ctx, cmd, response );
+	free( cmd->param.data );
+	free( cmd->cmd );
+	free( cmd );
+}
+
 static struct imap_cmd *
 v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
                    const char *fmt, va_list ap )
@@ -264,10 +273,7 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
   bail:
 	imap_invoke_bad_callback( ctx );
   bail2:
-	cmd->param.done( ctx, cmd, RESP_CANCEL );
-	free( cmd->param.data );
-	free( cmd->cmd );
-	free( cmd );
+	done_imap_cmd( ctx, cmd, RESP_CANCEL );
 	return NULL;
 }
 
@@ -291,10 +297,7 @@ cancel_submitted_imap_cmds( imap_store_t *ctx )
 	while ((cmd = ctx->in_progress)) {
 		ctx->in_progress = cmd->next;
 		/* don't update num_in_progress and in_progress_append - store is dead */
-		cmd->param.done( ctx, cmd, RESP_CANCEL );
-		free( cmd->param.data );
-		free( cmd->cmd );
-		free( cmd );
+		done_imap_cmd( ctx, cmd, RESP_CANCEL );
 	}
 }
 
@@ -901,12 +904,9 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 			imap_ref( ctx );
 			if (resp == RESP_CANCEL)
 				imap_invoke_bad_callback( ctx );
-			cmdp->param.done( ctx, cmdp, resp );
+			done_imap_cmd( ctx, cmdp, resp );
 			if (imap_deref( ctx ))
 				resp = RESP_CANCEL;
-			free( cmdp->param.data );
-			free( cmdp->cmd );
-			free( cmdp );
 			if (resp == RESP_CANCEL || !tcmd || tcmd == cmdp)
 				return resp;
 		}
@@ -922,10 +922,7 @@ get_cmd_result_p2( imap_store_t *ctx, struct imap_cmd *cmd, int response )
 	struct imap_cmd *ocmd = cmdp->orig_cmd;
 
 	if (response != RESP_OK) {
-		ocmd->param.done( ctx, ocmd, response );
-		free( ocmd->param.data );
-		free( ocmd->cmd );
-		free( ocmd );
+		done_imap_cmd( ctx, ocmd, response );
 	} else {
 		ctx->uidnext = 0;
 		ocmd->param.create = 0;
