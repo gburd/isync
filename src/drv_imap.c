@@ -236,7 +236,7 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 
 	while (ctx->literal_pending)
 		if (get_cmd_result( ctx, 0 ) == RESP_CANCEL)
-			goto bail2;
+			goto bail;
 
 	cmd->tag = ++ctx->nexttag;
 	if (fmt)
@@ -279,8 +279,6 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 	return cmd;
 
   bail:
-	imap_invoke_bad_callback( ctx );
-  bail2:
 	done_imap_cmd( ctx, cmd, RESP_CANCEL );
 	return NULL;
 }
@@ -811,7 +809,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 	for (;;) {
 		if (!(cmd = socket_read_line( &ctx->conn ))) {
 			if (socket_fill( &ctx->conn ) < 0)
-				break;
+				return RESP_CANCEL;
 			continue;
 		}
 
@@ -854,7 +852,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 						break; /* stream is likely to be useless now */
 					if (resp == LIST_PARTIAL) {
 						if (socket_fill( &ctx->conn ) < 0)
-							break;
+							return RESP_CANCEL;
 						goto do_fetch;
 					}
 					if (parse_fetch( ctx, ctx->parse_list_sts.head ) < 0)
@@ -882,16 +880,16 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				p = cmdp->param.data;
 				cmdp->param.data = 0;
 				if (socket_write( &ctx->conn, p, cmdp->param.data_len, GiveOwn ) < 0)
-					break;
+					return RESP_CANCEL;
 			} else if (cmdp->param.cont) {
 				if (cmdp->param.cont( ctx, cmdp, cmd ))
-					break;
+					return RESP_CANCEL;
 			} else {
 				error( "IMAP error: unexpected command continuation request\n" );
 				break;
 			}
 			if (socket_write( &ctx->conn, "\r\n", 2, KeepOwn ) < 0)
-				break;
+				return RESP_CANCEL;
 			if (!cmdp->param.cont)
 				ctx->literal_pending = 0;
 			if (!tcmd)
@@ -1128,12 +1126,13 @@ imap_open_store( store_conf_t *conf,
 
 	ctx = nfcalloc( sizeof(*ctx) );
 	ctx->gen.conf = conf;
-	ctx->conn.fd = -1;
 	ctx->ref_count = 1;
 	ctx->callbacks.imap_open = cb;
 	ctx->callback_aux = aux;
 	set_bad_callback( &ctx->gen, (void (*)(void *))imap_open_store_bail, ctx );
 	ctx->in_progress_append = &ctx->in_progress;
+
+	socket_init( &ctx->conn, (void (*)( void * ))imap_invoke_bad_callback, ctx );
 
 	if (!socket_connect( &srvc->sconf, &ctx->conn ))
 		goto bail;

@@ -79,6 +79,9 @@ typedef struct {
 	SSL *ssl;
 #endif
 
+	void (*bad_callback)( void *aux ); /* async fail while sending or listening */
+	void *callback_aux;
+
 	int offset; /* start of filled bytes in buffer */
 	int bytes; /* number of filled bytes in buffer */
 	int scanoff; /* offset to continue scanning for newline at, relative to 'offset' */
@@ -330,6 +333,15 @@ extern const char *Home;
 
 /* socket.c */
 
+/* call this before doing anything with the socket */
+static INLINE void socket_init( conn_t *conn,
+                                void (*bad_callback)( void *aux ),
+                                void *aux )
+{
+	conn->bad_callback = bad_callback;
+	conn->callback_aux = aux;
+	conn->fd = -1;
+}
 int socket_connect( const server_conf_t *conf, conn_t *sock );
 int socket_start_tls( const server_conf_t *conf, conn_t *sock );
 void socket_close( conn_t *sock );

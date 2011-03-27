@@ -49,6 +49,12 @@
 #include <netdb.h>
 
 static void
+socket_fail( conn_t *conn )
+{
+	conn->bad_callback( conn->callback_aux );
+}
+
+static void
 socket_perror( const char *func, conn_t *sock, int ret )
 {
 #ifdef HAVE_LIBSSL
@@ -65,20 +71,18 @@ socket_perror( const char *func, conn_t *sock, int ret )
 					error( "SSL_%s: %s\n", func, strerror(errno) );
 			} else
 				error( "SSL_%s: %s\n", func, ERR_error_string( err, 0 ) );
-			return;
+			break;
 		default:
 			error( "SSL_%s: unhandled SSL error %d\n", func, err );
 			break;
 		}
-		return;
-	}
-#else
-	(void)sock;
+	} else
 #endif
 	if (ret < 0)
 		perror( func );
 	else
 		error( "%s: unexpected EOF\n", func );
+	socket_fail( sock );
 }
 
 #ifdef HAVE_LIBSSL
@@ -361,6 +365,7 @@ socket_fill( conn_t *sock )
 	int len = sizeof(sock->buf) - n;
 	if (!len) {
 		error( "Socket error: receive buffer full. Probably protocol error.\n" );
+		socket_fail( sock );
 		return -1;
 	}
 	assert( sock->fd >= 0 );
