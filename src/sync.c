@@ -211,7 +211,7 @@ msg_fetched( int sts, void *aux )
 	copy_vars_t *vars = (copy_vars_t *)aux;
 	SVARS(vars->aux)
 	char *fmap, *buf;
-	int i, len, extra, scr, tcr, lcrs, crs, lines;
+	int i, len, extra, scr, tcr, lcrs, hcrs, bcrs, lines;
 	int start, sbreak = 0, ebreak = 0;
 	char c;
 
@@ -224,7 +224,7 @@ msg_fetched( int sts, void *aux )
 		if (vars->srec || scr != tcr) {
 			fmap = vars->data.data;
 			len = vars->data.len;
-			extra = lines = crs = i = 0;
+			extra = lines = hcrs = bcrs = i = 0;
 			if (vars->srec) {
 			  nloop:
 				start = i;
@@ -239,7 +239,7 @@ msg_fetched( int sts, void *aux )
 							goto oke;
 						}
 						lines++;
-						crs += lcrs;
+						hcrs += lcrs;
 						if (i - lcrs - 1 == start) {
 							sbreak = ebreak = start;
 							goto oke;
@@ -253,17 +253,17 @@ msg_fetched( int sts, void *aux )
 				free( fmap );
 				return vars->cb( SYNC_NOGOOD, 0, vars );
 			  oke:
-				extra += 8 + TUIDL + 1 + (tcr && crs);
+				extra += 8 + TUIDL + 1 + (tcr && hcrs);
 			}
 			if (tcr != scr) {
 				for (; i < len; i++) {
 					c = fmap[i];
 					if (c == '\r')
-						crs++;
+						bcrs++;
 					else if (c == '\n')
 						lines++;
 				}
-				extra -= crs;
+				extra -= hcrs + bcrs;
 				if (tcr)
 					extra += lines;
 			}
@@ -294,7 +294,7 @@ msg_fetched( int sts, void *aux )
 				buf += 8;
 				memcpy( buf, vars->srec->tuid, TUIDL );
 				buf += TUIDL;
-				if (tcr && crs)
+				if (tcr && hcrs)
 					*buf++ = '\r';
 				*buf++ = '\n';
 				i = ebreak;
