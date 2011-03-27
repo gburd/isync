@@ -253,7 +253,7 @@ msg_fetched( int sts, void *aux )
 				free( fmap );
 				return vars->cb( SYNC_NOGOOD, 0, vars );
 			  oke:
-				extra += 8 + TUIDL + 1 + (tcr && hcrs);
+				extra += 8 + TUIDL + 1 + (tcr && (!scr || hcrs));
 			}
 			if (tcr != scr) {
 				for (; i < len; i++) {
@@ -294,7 +294,7 @@ msg_fetched( int sts, void *aux )
 				buf += 8;
 				memcpy( buf, vars->srec->tuid, TUIDL );
 				buf += TUIDL;
-				if (tcr && hcrs)
+				if (tcr && (!scr || hcrs))
 					*buf++ = '\r';
 				*buf++ = '\n';
 				i = ebreak;
