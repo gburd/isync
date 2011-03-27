@@ -34,7 +34,7 @@
 #include <ctype.h>
 #include <dirent.h>
 
-#if HAVE_GETOPT_LONG
+#ifdef HAVE_GETOPT_LONG
 # define _GNU_SOURCE
 # include <getopt.h>
 struct option Opts[] = {
@@ -187,7 +187,7 @@ main( int argc, char **argv )
 #define FLAGS "wW:alCLRc:defhp:qu:P:r:F:M:1I:s:vVD"
 
 	mod = all = list = ops = writeout = Quiet = Verbose = Debug = 0;
-#if HAVE_GETOPT_LONG
+#ifdef HAVE_GETOPT_LONG
 	while ((i = getopt_long( argc, argv, FLAGS, Opts, NULL )) != -1)
 #else
 	while ((i = getopt( argc, argv, FLAGS )) != -1)
@@ -252,7 +252,7 @@ main( int argc, char **argv )
 			mod = 1;
 			break;
 		case 's':
-#if HAVE_LIBSSL
+#ifdef HAVE_LIBSSL
 			if (!strncasecmp( "imaps:", optarg, 6 )) {
 				global.use_imaps = 1;
 				global.port = 993;

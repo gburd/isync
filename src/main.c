@@ -74,7 +74,7 @@ PACKAGE " " VERSION " - mailbox synchronizer\n"
 "--create and --expunge can be suffixed with -master/-slave. Read the man page.\n"
 "\nSupported mailbox formats are: IMAP4rev1, Maildir\n"
 "\nCompile time options:\n"
-#if HAVE_LIBSSL
+#ifdef HAVE_LIBSSL
 "  +HAVE_LIBSSL\n"
 #else
 "  -HAVE_LIBSSL\n"
