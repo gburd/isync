@@ -1041,7 +1041,7 @@ msgs_found_sel( sync_vars_t *svars, int t )
 	 * One solution would be using binary search on an index array.
 	 * msgs are already sorted by UID, srecs would have to be sorted by uid[t].
 	 */
-	debug( "matching messages against sync records\n" );
+	debug( "matching messages on %s against sync records\n", str_ms[t] );
 	for (tmsg = svars->ctx[t]->msgs; tmsg; tmsg = tmsg->next) {
 		uid = tmsg->uid;
 		if (DFlags & DEBUG) {
