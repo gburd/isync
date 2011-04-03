@@ -185,7 +185,8 @@ typedef struct {
 #define ST_SENT_FLAGS      (1<<3)
 #define ST_SENT_TRASH      (1<<4)
 #define ST_CLOSED          (1<<5)
-#define ST_CANCELED        (1<<6)
+#define ST_SENT_CANCEL     (1<<6)
+#define ST_CANCELED        (1<<7)
 
 #define ST_DID_EXPUNGE     (1<<16)
 
@@ -399,7 +400,9 @@ cancel_sync( sync_vars_t *svars )
 		int other_state = svars->state[1-t];
 		if (svars->ret & SYNC_BAD(t)) {
 			cancel_done( AUX );
-		} else {
+		} else if (!(svars->state[t] & ST_SENT_CANCEL)) {
+			/* ignore subsequent failures from in-flight commands */
+			svars->state[t] |= ST_SENT_CANCEL;
 			svars->drv[t]->cancel( svars->ctx[t], cancel_done, AUX );
 		}
 		if (other_state & ST_CANCELED)
