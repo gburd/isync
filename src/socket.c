@@ -354,11 +354,17 @@ socket_close( conn_t *sock )
 }
 
 int
-socket_read( conn_t *sock, char *buf, int len )
+socket_fill( conn_t *sock )
 {
-	int n;
-
+	char *buf;
+	int n = sock->offset + sock->bytes;
+	int len = sizeof(sock->buf) - n;
+	if (!len) {
+		error( "Socket error: receive buffer full. Probably protocol error.\n" );
+		return -1;
+	}
 	assert( sock->fd >= 0 );
+	buf = sock->buf + n;
 	n =
 #ifdef HAVE_LIBSSL
 		sock->ssl ? SSL_read( sock->ssl, buf, len ) :
@@ -368,8 +374,53 @@ socket_read( conn_t *sock, char *buf, int len )
 		socket_perror( "read", sock, n );
 		close( sock->fd );
 		sock->fd = -1;
+		return -1;
+	} else {
+		sock->bytes += n;
+		return 0;
 	}
+}
+
+int
+socket_read( conn_t *conn, char *buf, int len )
+{
+	int n = conn->bytes;
+	if (n > len)
+		n = len;
+	memcpy( buf, conn->buf + conn->offset, n );
+	if (!(conn->bytes -= n))
+		conn->offset = 0;
+	else
+		conn->offset += n;
 	return n;
+}
+
+char *
+socket_read_line( conn_t *b )
+{
+	char *p, *s;
+	int n;
+
+	s = b->buf + b->offset;
+	p = memchr( s + b->scanoff, '\n', b->bytes - b->scanoff );
+	if (!p) {
+		b->scanoff = b->bytes;
+		if (b->offset + b->bytes == sizeof(b->buf)) {
+			memmove( b->buf, b->buf + b->offset, b->bytes );
+			b->offset = 0;
+		}
+		return 0;
+	}
+	n = p + 1 - s;
+	b->offset += n;
+	b->bytes -= n;
+	b->scanoff = 0;
+	if (p != s && p[-1] == '\r')
+		p--;
+	*p = 0;
+	if (DFlags & VERBOSE)
+		puts( s );
+	return s;
 }
 
 int
@@ -408,57 +459,6 @@ socket_pending( conn_t *sock )
 		return SSL_pending( sock->ssl );
 #endif
 	return 0;
-}
-
-/* simple line buffering */
-int
-buffer_gets( conn_t *b, char **s )
-{
-	int n;
-	int start = b->offset;
-
-	*s = b->buf + start;
-
-	for (;;) {
-		/* make sure we have enough data to read the \r\n sequence */
-		if (b->offset + 1 >= b->bytes) {
-			if (start) {
-				/* shift down used bytes */
-				*s = b->buf;
-
-				assert( start <= b->bytes );
-				n = b->bytes - start;
-
-				if (n)
-					memmove( b->buf, b->buf + start, n );
-				b->offset -= start;
-				b->bytes = n;
-				start = 0;
-			}
-
-			n = socket_read( b, b->buf + b->bytes,
-			                 sizeof(b->buf) - b->bytes );
-
-			if (n <= 0)
-				return -1;
-
-			b->bytes += n;
-		}
-
-		if (b->buf[b->offset] == '\r') {
-			assert( b->offset + 1 < b->bytes );
-			if (b->buf[b->offset + 1] == '\n') {
-				b->buf[b->offset] = 0;  /* terminate the string */
-				b->offset += 2; /* next line */
-				if (DFlags & VERBOSE)
-					puts( *s );
-				return 0;
-			}
-		}
-
-		b->offset++;
-	}
-	/* not reached */
 }
 
 #ifdef HAVE_LIBSSL

@@ -79,8 +79,9 @@ typedef struct {
 	SSL *ssl;
 #endif
 
-	int bytes;
-	int offset;
+	int offset; /* start of filled bytes in buffer */
+	int bytes; /* number of filled bytes in buffer */
+	int scanoff; /* offset to continue scanning for newline at, relative to 'offset' */
 	char buf[1024];
 } conn_t;
 
@@ -332,12 +333,12 @@ extern const char *Home;
 int socket_connect( const server_conf_t *conf, conn_t *sock );
 int socket_start_tls( const server_conf_t *conf, conn_t *sock );
 void socket_close( conn_t *sock );
-int socket_read( conn_t *sock, char *buf, int len );
+int socket_fill( conn_t *sock );
+int socket_read( conn_t *sock, char *buf, int len ); /* never waits */
+char *socket_read_line( conn_t *sock ); /* don't free return value; never waits */
 typedef enum { KeepOwn = 0, GiveOwn } ownership_t;
 int socket_write( conn_t *sock, char *buf, int len, ownership_t takeOwn );
 int socket_pending( conn_t *sock );
-
-int buffer_gets( conn_t *b, char **s );
 
 void cram( const char *challenge, const char *user, const char *pass,
            char **_final, int *_finallen );

@@ -67,6 +67,13 @@ typedef struct _list {
 	int len;
 } list_t;
 
+#define MAX_LIST_DEPTH 5
+
+typedef struct parse_list_state {
+	list_t *head, **stack[MAX_LIST_DEPTH];
+	int level, need_bytes;
+} parse_list_state_t;
+
 struct imap_cmd;
 
 typedef struct imap_store {
@@ -79,6 +86,7 @@ typedef struct imap_store {
 	list_t *ns_personal, *ns_other, *ns_shared; /* NAMESPACE info */
 	message_t **msgapp; /* FETCH results */
 	unsigned caps; /* CAPABILITY results */
+	parse_list_state_t parse_list_sts;
 	/* command queue */
 	int nexttag, num_in_progress, literal_pending;
 	struct imap_cmd *in_progress, **in_progress_append;
@@ -433,66 +441,76 @@ free_list( list_t *list )
 	}
 }
 
+enum {
+	LIST_OK,
+	LIST_PARTIAL,
+	LIST_BAD
+};
+
 static int
-parse_imap_list_l( imap_store_t *ctx, char **sp, list_t **curp, int level )
+parse_imap_list( imap_store_t *ctx, char **sp, parse_list_state_t *sts )
 {
-	list_t *cur;
+	list_t *cur, **curp;
 	char *s = *sp, *p;
-	int n, bytes;
+	int bytes;
+
+	assert( sts );
+	assert( sts->level > 0 );
+	curp = sts->stack[--sts->level];
+	bytes = sts->need_bytes;
+	if (bytes >= 0) {
+		sts->need_bytes = -1;
+		if (!bytes)
+			goto getline;
+		cur = (list_t *)((char *)curp - offsetof(list_t, next));
+		s = cur->val + cur->len - bytes;
+		goto getbytes;
+	}
 
 	for (;;) {
 		while (isspace( (unsigned char)*s ))
 			s++;
-		if (level && *s == ')') {
+		if (sts->level && *s == ')') {
 			s++;
-			break;
+			curp = sts->stack[--sts->level];
+			goto next;
 		}
 		*curp = cur = nfmalloc( sizeof(*cur) );
-		curp = &cur->next;
 		cur->val = 0; /* for clean bail */
+		curp = &cur->next;
+		*curp = 0; /* ditto */
 		if (*s == '(') {
 			/* sublist */
+			if (sts->level == MAX_LIST_DEPTH)
+				goto bail;
 			s++;
 			cur->val = LIST;
-			if (parse_imap_list_l( ctx, &s, &cur->child, level + 1 ))
-				goto bail;
+			sts->stack[sts->level++] = curp;
+			curp = &cur->child;
+			*curp = 0; /* for clean bail */
+			goto next2;
 		} else if (ctx && *s == '{') {
 			/* literal */
 			bytes = cur->len = strtol( s + 1, &s, 10 );
-			if (*s != '}')
+			if (*s != '}' || *++s)
 				goto bail;
 
 			s = cur->val = nfmalloc( cur->len );
 
-			/* dump whats left over in the input buffer */
-			n = ctx->conn.bytes - ctx->conn.offset;
+		  getbytes:
+			bytes -= socket_read( &ctx->conn, s, bytes );
+			if (bytes > 0)
+				goto postpone;
 
-			if (n > bytes)
-				/* the entire message fit in the buffer */
-				n = bytes;
-
-			memcpy( s, ctx->conn.buf + ctx->conn.offset, n );
-			s += n;
-			bytes -= n;
-
-			/* mark that we used part of the buffer */
-			ctx->conn.offset += n;
-
-			/* now read the rest of the message */
-			while (bytes > 0) {
-				if ((n = socket_read( &ctx->conn, s, bytes )) <= 0)
-					goto bail;
-				s += n;
-				bytes -= n;
-			}
 			if (DFlags & XVERBOSE) {
 				puts( "=========" );
 				fwrite( cur->val, cur->len, 1, stdout );
 				puts( "=========" );
 			}
 
-			if (buffer_gets( &ctx->conn, &s ))
-				goto bail;
+		  getline:
+			if (!(s = socket_read_line( &ctx->conn )))
+				goto postpone;
 		} else if (*s == '"') {
 			/* quoted string */
 			s++;
@@ -509,7 +527,7 @@ parse_imap_list_l( imap_store_t *ctx, char **sp, list_t **curp, int level )
 			/* atom */
 			p = s;
 			for (; *s && !isspace( (unsigned char)*s ); s++)
-				if (level && *s == ')')
+				if (sts->level && *s == ')')
 					break;
 			cur->len = s - p;
 			if (cur->len == 3 && !memcmp ("NIL", p, 3))
@@ -521,49 +539,56 @@ parse_imap_list_l( imap_store_t *ctx, char **sp, list_t **curp, int level )
 			}
 		}
 
-		if (!level)
+	  next:
+		if (!sts->level)
 			break;
+	  next2:
 		if (!*s)
 			goto bail;
 	}
 	*sp = s;
-	*curp = 0;
-	return 0;
+	return LIST_OK;
 
+  postpone:
+	if (sts->level < MAX_LIST_DEPTH) {
+		sts->stack[sts->level++] = curp;
+		sts->need_bytes = bytes;
+		return LIST_PARTIAL;
+	}
   bail:
-	*curp = 0;
-	return -1;
+	free_list( sts->head );
+	return LIST_BAD;
 }
 
-static list_t *
-parse_imap_list( imap_store_t *ctx, char **sp )
+static void
+parse_list_init( parse_list_state_t *sts )
 {
-	list_t *head;
-
-	if (!parse_imap_list_l( ctx, sp, &head, 0 ))
-		return head;
-	free_list( head );
-	return NULL;
+	sts->need_bytes = -1;
+	sts->level = 1;
+	sts->head = 0;
+	sts->stack[0] = &sts->head;
 }
 
 static list_t *
 parse_list( char **sp )
 {
-	return parse_imap_list( 0, sp );
+	parse_list_state_t sts;
+	parse_list_init( &sts );
+	if (parse_imap_list( 0, sp, &sts ) == LIST_OK)
+		return sts.head;
+	return NULL;
 }
 
 static int
-parse_fetch( imap_store_t *ctx, char *cmd ) /* move this down */
+parse_fetch( imap_store_t *ctx, list_t *list )
 {
-	list_t *tmp, *list, *flags;
+	list_t *tmp, *flags;
 	char *body = 0;
 	imap_message_t *cur;
 	msg_data_t *msgdata;
 	struct imap_cmd *cmdp;
 	int uid = 0, mask = 0, status = 0, size = 0;
 	unsigned i;
-
-	list = parse_imap_list( ctx, &cmd );
 
 	if (!is_list( list )) {
 		error( "IMAP error: bogus FETCH response\n" );
@@ -784,8 +809,11 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 
 	greeted = ctx->greeting;
 	for (;;) {
-		if (buffer_gets( &ctx->conn, &cmd ))
-			break;
+		if (!(cmd = socket_read_line( &ctx->conn ))) {
+			if (socket_fill( &ctx->conn ) < 0)
+				break;
+			continue;
+		}
 
 		arg = next_arg( &cmd );
 		if (*arg == '*') {
@@ -820,8 +848,17 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				else if (!strcmp( "RECENT", arg1 ))
 					ctx->gen.recent = atoi( arg );
 				else if(!strcmp ( "FETCH", arg1 )) {
-					if (parse_fetch( ctx, cmd ))
+					parse_list_init( &ctx->parse_list_sts );
+				  do_fetch:
+					if ((resp = parse_imap_list( ctx, &cmd, &ctx->parse_list_sts )) == LIST_BAD)
 						break; /* stream is likely to be useless now */
+					if (resp == LIST_PARTIAL) {
+						if (socket_fill( &ctx->conn ) < 0)
+							break;
+						goto do_fetch;
+					}
+					if (parse_fetch( ctx, ctx->parse_list_sts.head ) < 0)
+						break; /* this may mean anything, so prefer not to spam the log */
 				}
 			} else {
 				error( "IMAP error: unrecognized untagged response '%s'\n", arg );
