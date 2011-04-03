@@ -145,13 +145,15 @@ typedef struct {
 	channel_conf_t *chan;
 	store_t *ctx[2];
 	driver_t *drv[2];
-	int state[2], ref_count, ret;
+	int state[2], ref_count, ret, lfd;
 	int find_old_total[2], find_old_done[2];
 	int new_total[2], new_done[2];
 	int find_new_total[2], find_new_done[2];
 	int flags_total[2], flags_done[2];
 	int trash_total[2], trash_done[2];
-	int maxuid[2], uidval[2], smaxxuid, lfd;
+	int maxuid[2]; /* highest UID that was already propagated */
+	int uidval[2]; /* UID validity value */
+	int smaxxuid; /* highest expired UID on slave */
 	unsigned find:1;
 } sync_vars_t;
 

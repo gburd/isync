@@ -167,6 +167,8 @@ typedef struct store {
 	int recent; /* # of recent messages - don't trust this beyond the initial read */
 } store_t;
 
+/* When the callback is invoked (at most once per store), the store is fubar;
+ * call the driver's cancel_store() to dispose of it. */
 static INLINE void
 set_bad_callback( store_t *ctx, void (*cb)( void *aux ), void *aux )
 {
@@ -181,11 +183,14 @@ typedef struct {
 } msg_data_t;
 
 #define DRV_OK          0
+/* Message went missing, or mailbox is full, etc. */
 #define DRV_MSG_BAD     1
+/* Something is wrong with the current mailbox - probably it is somehow inaccessible. */
 #define DRV_BOX_BAD     2
+/* The command has been cancel()ed or cancel_store()d. */
 #define DRV_CANCELED    3
 
-/* All memory belongs to the driver's user. */
+/* All memory belongs to the driver's user, unless stated otherwise. */
 
 /*
    This flag says that the driver CAN store messages with CRLFs,
@@ -198,34 +203,87 @@ typedef struct {
 
 struct driver {
 	int flags;
+
+	/* Parse configuration. */
 	int (*parse_store)( conffile_t *cfg, store_conf_t **storep, int *err );
+
+	/* Close remaining server connections. All stores must be disowned first. */
 	void (*cleanup)( void );
+
+	/* Open a store with the given configuration. This may recycle existing
+	 * server connections. Upon failure, a null store is passed to the callback. */
 	void (*open_store)( store_conf_t *conf,
 	                    void (*cb)( store_t *ctx, void *aux ), void *aux );
+
+	/* Mark the store as available for recycling. Server connection may be kept alive. */
 	void (*disown_store)( store_t *ctx );
+
+	/* Try to recycle a store with the given configuration. */
 	store_t *(*own_store)( store_conf_t *conf );
+
+	/* Discard the store after a bad_callback. The server connections will be closed.
+	 * Pending commands will have their callbacks synchronously invoked with DRV_CANCELED. */
 	void (*cancel_store)( store_t *ctx );
+
+	/* List the mailboxes in this store. */
 	void (*list)( store_t *ctx,
 	              void (*cb)( int sts, void *aux ), void *aux );
+
+	/* Invoked before select(), this informs the driver which operations (OP_*)
+	 * will be performed on the mailbox. The driver may extend the set by implicitly
+	 * needed or available operations. */
 	void (*prepare_opts)( store_t *ctx, int opts );
+
+	/* Open the mailbox ctx->name. Optionally create missing boxes.
+	 * As a side effect, this should resolve ctx->path if applicable. */
 	void (*select)( store_t *ctx, int create,
 	               void (*cb)( int sts, void *aux ), void *aux );
+
+	/* Load the message attributes needed to perform the requested operations.
+	 * Consider only messages with UIDs between minuid and maxuid (inclusive)
+	 * and those named in the excs array (smaller than minuid).
+	 * The driver takes ownership of the excs array. */
 	void (*load)( store_t *ctx, int minuid, int maxuid, int *excs, int nexcs,
 	              void (*cb)( int sts, void *aux ), void *aux );
+
+	/* Fetch the contents and flags of the given message from the current mailbox. */
 	void (*fetch_msg)( store_t *ctx, message_t *msg, msg_data_t *data,
 	                   void (*cb)( int sts, void *aux ), void *aux );
+
+	/* Store the given message to either the current mailbox or the trash folder.
+	 * If the new copy's UID can be immediately determined, return it, otherwise -1. */
 	void (*store_msg)( store_t *ctx, msg_data_t *data, int to_trash,
 	                   void (*cb)( int sts, int uid, void *aux ), void *aux );
+
+	/* Find a message by its temporary UID header to determine its real UID. */
 	void (*find_msg)( store_t *ctx, const char *tuid,
 	                  void (*cb)( int sts, int uid, void *aux ), void *aux );
+
+	/* Add/remove the named flags to/from the given message. The message may be either
+	 * a pre-fetched one (in which case the in-memory representation is updated),
+	 * or it may be identifed by UID only. The operation may be delayed until commit()
+	 * is called. */
 	void (*set_flags)( store_t *ctx, message_t *msg, int uid, int add, int del, /* msg can be null, therefore uid as a fallback */
 	                   void (*cb)( int sts, void *aux ), void *aux );
+
+	/* Move the given message from the current mailbox to the trash folder.
+	 * This may expunge the original message immediately, but it needn't to. */
 	void (*trash_msg)( store_t *ctx, message_t *msg, /* This may expunge the original message immediately, but it needn't to */
 	                   void (*cb)( int sts, void *aux ), void *aux );
+
+	/* Expunge deleted messages from the current mailbox and close it.
+	 * There is no need to explicitly close a mailbox if no expunge is needed. */
 	void (*close)( store_t *ctx, /* IMAP-style: expunge inclusive */
 	               void (*cb)( int sts, void *aux ), void *aux );
-	void (*cancel)( store_t *ctx, /* only not yet sent commands */
+
+	/* Cancel queued commands which are not in flight yet; they will have their
+	 * callbacks invoked with DRV_CANCELED. Afterwards, wait for the completion of
+	 * the in-flight commands. If the store is canceled before this command completes,
+	 * the callback will *not* be invoked. */
+	void (*cancel)( store_t *ctx,
 	                void (*cb)( void *aux ), void *aux );
+
+	/* Commit any pending set_flags() commands. */
 	void (*commit)( store_t *ctx );
 };
 

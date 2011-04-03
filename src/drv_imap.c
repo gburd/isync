@@ -144,6 +144,8 @@ struct imap_cmd {
 	int tag;
 
 	struct {
+		/* Will be called on each continuation request until it resets this pointer.
+		 * Needs to invoke bad_callback and return -1 on error, otherwise return 0. */
 		int (*cont)( imap_store_t *ctx, struct imap_cmd *cmd, const char *prompt );
 		void (*done)( imap_store_t *ctx, struct imap_cmd *cmd, int response );
 		char *data;
@@ -1248,6 +1250,8 @@ get_cmd_result_p2( imap_store_t *ctx, struct imap_cmd *cmd, int response )
 	}
 }
 
+/******************* imap_cancel_store *******************/
+
 static void
 imap_cancel_store( store_t *gctx )
 {
@@ -1284,6 +1288,8 @@ imap_invoke_bad_callback( imap_store_t *ctx )
 {
 	ctx->gen.bad_callback( ctx->gen.bad_callback_aux );
 }
+
+/******************* imap_disown_store & imap_own_store *******************/
 
 static store_t *unowned;
 
@@ -1323,6 +1329,8 @@ imap_own_store( store_conf_t *conf )
 	return 0;
 }
 
+/******************* imap_cleanup *******************/
+
 static void imap_cleanup_p2( imap_store_t *, struct imap_cmd *, int );
 
 static void
@@ -1344,6 +1352,8 @@ imap_cleanup_p2( imap_store_t *ctx,
 	if (response != RESP_CANCEL)
 		imap_cancel_store( &ctx->gen );
 }
+
+/******************* imap_open_store *******************/
 
 #ifdef HAVE_LIBSSL
 static int
@@ -1794,11 +1804,15 @@ imap_open_store_bail( imap_store_t *ctx )
 	cb( 0, aux );
 }
 
+/******************* imap_prepare_opts *******************/
+
 static void
 imap_prepare_opts( store_t *gctx, int opts )
 {
 	gctx->opts = opts;
 }
+
+/******************* imap_select *******************/
 
 static void
 imap_select( store_t *gctx, int create,
@@ -1825,6 +1839,8 @@ imap_select( store_t *gctx, int create,
 	imap_exec( ctx, &cmd->gen, imap_done_simple_box,
 	           "SELECT \"%s%s\"", prefix, gctx->name );
 }
+
+/******************* imap_load *******************/
 
 static int imap_submit_load( imap_store_t *, const char *, struct imap_cmd_refcounted_state *,
                              struct imap_cmd ** );
@@ -1906,6 +1922,8 @@ imap_load_p2( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int response 
 		imap_refcounted_done( sts );
 }
 
+/******************* imap_fetch_msg *******************/
+
 static void
 imap_fetch_msg( store_t *ctx, message_t *msg, msg_data_t *data,
                 void (*cb)( int sts, void *aux ), void *aux )
@@ -1919,6 +1937,8 @@ imap_fetch_msg( store_t *ctx, message_t *msg, msg_data_t *data,
 	           "UID FETCH %d (%sBODY.PEEK[])",
 	           msg->uid, (msg->status & M_FLAGS) ? "" : "FLAGS " );
 }
+
+/******************* imap_set_flags *******************/
 
 static void imap_set_flags_p2( imap_store_t *, struct imap_cmd *, int );
 
@@ -1995,6 +2015,8 @@ imap_set_flags_p2( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int resp
 		imap_refcounted_done( sts );
 }
 
+/******************* imap_close *******************/
+
 static void
 imap_close( store_t *ctx,
             void (*cb)( int sts, void *aux ), void *aux )
@@ -2004,6 +2026,8 @@ imap_close( store_t *ctx,
 	INIT_IMAP_CMD(imap_cmd_simple, cmd, cb, aux)
 	imap_exec( (imap_store_t *)ctx, &cmd->gen, imap_done_simple_box, "CLOSE" );
 }
+
+/******************* imap_trash_msg *******************/
 
 static void
 imap_trash_msg( store_t *gctx, message_t *msg,
@@ -2019,6 +2043,8 @@ imap_trash_msg( store_t *gctx, message_t *msg,
 	           "UID COPY %d \"%s%s\"",
 	           msg->uid, ctx->prefix, gctx->conf->trash );
 }
+
+/******************* imap_store_msg *******************/
 
 static void imap_store_msg_p2( imap_store_t *, struct imap_cmd *, int );
 
@@ -2066,6 +2092,8 @@ imap_store_msg_p2( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int resp
 	cmdp->callback( response, cmdp->out_uid, cmdp->callback_aux );
 }
 
+/******************* imap_find_msg *******************/
+
 static void imap_find_msg_p2( imap_store_t *, struct imap_cmd *, int );
 
 static void
@@ -2095,6 +2123,8 @@ imap_find_msg_p2( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int respo
 		                cmdp->out_uid, cmdp->callback_aux );
 }
 
+/******************* imap_list *******************/
+
 static void
 imap_list( store_t *gctx,
            void (*cb)( int sts, void *aux ), void *aux )
@@ -2107,6 +2137,8 @@ imap_list( store_t *gctx,
 	           "LIST \"\" \"%s%%\"", ctx->prefix );
 }
 
+/******************* imap_cancel *******************/
+
 static void
 imap_cancel( store_t *gctx,
              void (*cb)( void *aux ), void *aux )
@@ -2115,11 +2147,15 @@ imap_cancel( store_t *gctx,
 	cb( aux );
 }
 
+/******************* imap_commit *******************/
+
 static void
 imap_commit( store_t *gctx )
 {
 	(void)gctx;
 }
+
+/******************* imap_parse_store *******************/
 
 imap_server_conf_t *servers, **serverapp = &servers;
 
