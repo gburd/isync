@@ -28,7 +28,6 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/stat.h>
-#include <errno.h>
 #include <time.h>
 
 #include <db.h>
@@ -97,10 +96,9 @@ convert( config_t *box )
 	for (i = 0; i < 3; i++) {
 		nfsnprintf( buf, sizeof(buf), "%s/%s", mboxdir, subdirs[i] );
 		if (stat( buf, &sb )) {
-			fprintf( stderr, "ERROR: stat %s: %s (errno %d)\n", buf,
-			         strerror(errno), errno );
+			sys_error( "ERROR: cannot access %s", buf );
 			fprintf( stderr,
-			         "ERROR: %s does not appear to be a valid maildir style mailbox\n",
+			         "ERROR: '%s' does not appear to be a valid maildir style mailbox\n",
 			         mboxdir );
 			goto err1;
 		}
@@ -111,7 +109,7 @@ convert( config_t *box )
 	nfsnprintf( sname, sizeof(sname), "%s/.mbsyncstate", mboxdir );
 
 	if ((fd = open( ilname, O_WRONLY|O_CREAT, 0600 )) < 0) {
-		perror( ilname );
+		sys_error( "Cannot create %s", ilname );
 		goto err1;
 	}
 #if SEEK_SET != 0
@@ -121,20 +119,20 @@ convert( config_t *box )
 	lck.l_type = F_WRLCK;
 #endif
 	if (fcntl( fd, F_SETLKW, &lck )) {
-		perror( ilname );
+		sys_error( "Cannot lock %s", ilname );
 	  err2:
 		close( fd );
 		goto err1;
 	}
 
 	if (!(fp = fopen( iuvname, "r" ))) {
-		perror( iuvname );
+		sys_error( "Cannot open %s", iuvname );
 		goto err2;
 	}
 	fscanf( fp, "%d", &uidval );
 	fclose( fp );
 	if (!(fp = fopen( imuname, "r" ))) {
-		perror( imuname );
+		sys_error( "Cannot open %s", imuname );
 		goto err2;
 	}
 	fscanf( fp, "%d", &maxuid );
@@ -162,7 +160,7 @@ convert( config_t *box )
 	for (i = 0; i < 2; i++) {
 		nfsnprintf( buf, sizeof(buf), "%s/%s/", mboxdir, subdirs[i] );
 		if (!(d = opendir( buf ))) {
-			perror( "opendir" );
+			sys_error( "Cannot list %s", buf );
 		  err4:
 			free( msgs );
 			if (db)
@@ -199,7 +197,7 @@ convert( config_t *box )
 	qsort( msgs, nmsgs, sizeof(msg_t), compare_uids );
 
 	if (!(fp = fopen( sname, "w" ))) {
-		perror( sname );
+		sys_error( "Cannot create %s", sname );
 		goto err4;
 	}
 	if (box->max_messages) {
@@ -238,7 +236,7 @@ convert( config_t *box )
 		rename( iumname, diumname );
 	} else {
 		if (!(fp = fopen( uvname, "w" ))) {
-			perror( uvname );
+			sys_error( "Cannot create %s", uvname );
 			goto err4;
 		}
 		fprintf( fp, "%d\n%d\n", uidval, maxuid );

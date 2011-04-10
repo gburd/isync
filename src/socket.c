@@ -79,15 +79,15 @@ ssl_return( const char *func, conn_t *conn, int ret )
 	case SSL_ERROR_SSL:
 		if (!(err = ERR_get_error())) {
 			if (ret == 0)
-				error( "SSL_%s: unexpected EOF\n", func );
+				error( "Socket error: secure %s %s: unexpected EOF\n", func, conn->name );
 			else
-				error( "SSL_%s: %s\n", func, strerror( errno ) );
+				sys_error( "Socket error: secure %s %s", func, conn->name );
 		} else {
-			error( "SSL_%s: %s\n", func, ERR_error_string( err, 0 ) );
+			error( "Socket error: secure %s %s: %s\n", func, conn->name, ERR_error_string( err, 0 ) );
 		}
 		break;
 	default:
-		error( "SSL_%s: unhandled SSL error %d\n", func, err );
+		error( "Socket error: secure %s %s: unhandled SSL error %d\n", func, conn->name, err );
 		break;
 	}
 	if (conn->state == SCK_STARTTLS)
@@ -148,11 +148,11 @@ verify_cert( const server_conf_t *conf, conn_t *sock )
 
 	while (conf->cert_file) { /* while() instead of if() so break works */
 		if (X509_cmp_current_time( X509_get_notBefore( cert )) >= 0) {
-			error( "Server certificate is not yet valid" );
+			error( "Server certificate is not yet valid\n" );
 			break;
 		}
 		if (X509_cmp_current_time( X509_get_notAfter( cert )) <= 0) {
-			error( "Server certificate has expired" );
+			error( "Server certificate has expired\n" );
 			break;
 		}
 		if (!X509_digest( cert, EVP_sha1(), md, &n )) {
@@ -160,8 +160,7 @@ verify_cert( const server_conf_t *conf, conn_t *sock )
 			break;
 		}
 		if (!(fp = fopen( conf->cert_file, "rt" ))) {
-			error( "Unable to load CertificateFile '%s': %s\n",
-			       conf->cert_file, strerror( errno ) );
+			sys_error( "Unable to load CertificateFile '%s'", conf->cert_file );
 			return -1;
 		}
 		err = -1;
@@ -197,7 +196,7 @@ verify_cert( const server_conf_t *conf, conn_t *sock )
 	X509_STORE_CTX_cleanup( &xsc );
 	if (!err)
 		return 0;
-	error( "Error, can't verify certificate: %s (%d)\n",
+	error( "Error, cannot verify certificate: %s (%d)\n",
 	       X509_verify_cert_error_string( err ), err );
 
 	X509_NAME_oneline( X509_get_subject_name( cert ), buf, sizeof(buf) );
@@ -286,7 +285,7 @@ socket_start_tls( conn_t *conn, void (*cb)( int ok, void *aux ) )
 static void
 start_tls_p2( conn_t *conn )
 {
-	switch (ssl_return( "connect", conn, SSL_connect( conn->ssl ) )) {
+	switch (ssl_return( "connect to", conn, SSL_connect( conn->ssl ) )) {
 	case -1:
 		start_tls_p3( conn, 0 );
 		break;
@@ -337,7 +336,8 @@ socket_connect( conn_t *sock, void (*cb)( int ok, void *aux ) )
 
 	/* open connection to IMAP server */
 	if (conf->tunnel) {
-		infon( "Starting tunnel '%s'... ", conf->tunnel );
+		nfasprintf( &sock->name, "tunnel '%s'", conf->tunnel );
+		infon( "Starting %s... ", sock->name );
 
 		if (socketpair( PF_UNIX, SOCK_STREAM, 0, a )) {
 			perror( "socketpair" );
@@ -387,11 +387,12 @@ socket_connect( conn_t *sock, void (*cb)( int ok, void *aux ) )
 		fcntl( s, F_SETFL, O_NONBLOCK );
 		add_fd( s, socket_fd_cb, sock );
 
-		infon( "Connecting to %s (%s:%hu) ... ",
-		       conf->host, inet_ntoa( addr.sin_addr ), ntohs( addr.sin_port ) );
+		nfasprintf( &sock->name, "%s (%s:%hu)",
+		            conf->host, inet_ntoa( addr.sin_addr ), ntohs( addr.sin_port ) );
+		infon( "Connecting to %s... ", sock->name );
 		if (connect( s, (struct sockaddr *)&addr, sizeof(addr) )) {
 			if (errno != EINPROGRESS) {
-				perror( "connect" );
+				sys_error( "Cannot connect to %s", sock->name );
 				socket_close_internal( sock );
 				goto bail;
 			}
@@ -416,19 +417,17 @@ socket_connected( conn_t *conn )
 	int soerr;
 	socklen_t selen = sizeof(soerr);
 
-	infon( "Connecting to %s: ", conn->conf->host );
 	if (getsockopt( conn->fd, SOL_SOCKET, SO_ERROR, &soerr, &selen )) {
 		perror( "getsockopt" );
 		exit( 1 );
 	}
 	if (soerr) {
 		errno = soerr;
-		perror( "connect" );
+		sys_error( "Cannot connect to %s", conn->name );
 		socket_close_internal( conn );
 		socket_connect_bail( conn );
 		return;
 	}
-	info( "ok\n" );
 	socket_connected2( conn );
 }
 
@@ -443,6 +442,8 @@ socket_connected2( conn_t *conn )
 static void
 socket_connect_bail( conn_t *conn )
 {
+	free( conn->name );
+	conn->name = 0;
 	conn->callbacks.connect( 0, conn->callback_aux );
 }
 
@@ -453,6 +454,8 @@ socket_close( conn_t *sock )
 {
 	if (sock->fd >= 0)
 		socket_close_internal( sock );
+	free( sock->name );
+	sock->name = 0;
 #ifdef HAVE_LIBSSL
 	if (sock->ssl) {
 		SSL_free( sock->ssl );
@@ -478,7 +481,7 @@ socket_fill( conn_t *sock )
 	buf = sock->buf + n;
 #ifdef HAVE_LIBSSL
 	if (sock->ssl) {
-		if ((n = ssl_return( "read", sock, SSL_read( sock->ssl, buf, len ) )) <= 0)
+		if ((n = ssl_return( "read from", sock, SSL_read( sock->ssl, buf, len ) )) <= 0)
 			return;
 		if (n == len && SSL_pending( sock->ssl ))
 			fake_fd( sock->fd, POLLIN );
@@ -486,11 +489,11 @@ socket_fill( conn_t *sock )
 #endif
 	{
 		if ((n = read( sock->fd, buf, len )) < 0) {
-			perror( "read" );
+			sys_error( "Socket error: read from %s", sock->name );
 			socket_fail( sock );
 			return;
 		} else if (!n) {
-			error( "read: unexpected EOF\n" );
+			error( "Socket error: read from %s: unexpected EOF\n", sock->name );
 			socket_fail( sock );
 			return;
 		}
@@ -549,12 +552,12 @@ do_write( conn_t *sock, char *buf, int len )
 	assert( sock->fd >= 0 );
 #ifdef HAVE_LIBSSL
 	if (sock->ssl)
-		return ssl_return( "write", sock, SSL_write( sock->ssl, buf, len ) );
+		return ssl_return( "write to", sock, SSL_write( sock->ssl, buf, len ) );
 #endif
 	n = write( sock->fd, buf, len );
 	if (n < 0) {
 		if (errno != EAGAIN && errno != EWOULDBLOCK) {
-			perror( "write" );
+			sys_error( "Socket error: write to %s", sock->name );
 			socket_fail( sock );
 		} else {
 			n = 0;
@@ -646,7 +649,7 @@ socket_fd_cb( int events, void *aux )
 	conn_t *conn = (conn_t *)aux;
 
 	if (events & POLLERR) {
-		error( "Unidentified socket error.\n" );
+		error( "Unidentified socket error from %s.\n", conn->name );
 		socket_fail( conn );
 		return;
 	}

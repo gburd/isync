@@ -101,7 +101,7 @@ maildir_open_store( store_conf_t *conf,
 	struct stat st;
 
 	if (stat( conf->path, &st ) || !S_ISDIR(st.st_mode)) {
-		error( "Maildir error: cannot open store %s\n", conf->path );
+		error( "Maildir error: cannot open store '%s'\n", conf->path );
 		cb( 0, aux );
 		return;
 	}
@@ -173,7 +173,7 @@ maildir_list( store_t *gctx,
 	struct dirent *de;
 
 	if (!(dir = opendir( gctx->conf->path ))) {
-		error( "%s: %s\n", gctx->conf->path, strerror(errno) );
+		sys_error( "Maildir error: cannot list %s", gctx->conf->path );
 		maildir_invoke_bad_callback( gctx );
 		cb( DRV_CANCELED, aux );
 		return;
@@ -240,16 +240,14 @@ maildir_validate( const char *prefix, const char *box, int create, maildir_store
 		if (errno == ENOENT) {
 			if (create) {
 				if (mkdir( buf, 0700 )) {
-					error( "Maildir error: mkdir %s: %s (errno %d)\n",
-					       buf, strerror(errno), errno );
+					sys_error( "Maildir error: cannot create mailbox '%s'", buf );
 					maildir_invoke_bad_callback( &ctx->gen );
 					return DRV_CANCELED;
 				}
 				for (i = 0; i < 3; i++) {
 					memcpy( buf + bl, subdirs[i], 4 );
 					if (mkdir( buf, 0700 )) {
-						error( "Maildir error: mkdir %s: %s (errno %d)\n",
-						       buf, strerror(errno), errno );
+						sys_error( "Maildir error: cannot create directory %s", buf );
 						return DRV_BOX_BAD;
 					}
 				}
@@ -258,8 +256,7 @@ maildir_validate( const char *prefix, const char *box, int create, maildir_store
 				return DRV_BOX_BAD;
 			}
 		} else {
-			error( "Maildir error: stat %s: %s (errno %d)\n",
-			       buf, strerror(errno), errno );
+			sys_error( "Maildir error: cannot access mailbox '%s'", buf );
 			return DRV_BOX_BAD;
 		}
 	} else {
@@ -273,8 +270,7 @@ maildir_validate( const char *prefix, const char *box, int create, maildir_store
 		memcpy( buf + bl, "tmp/", 5 );
 		bl += 4;
 		if (!(dirp = opendir( buf ))) {
-			error( "Maildir error: opendir: %s: %s (errno %d)\n",
-			       buf, strerror(errno), errno );
+			sys_error( "Maildir error: cannot list %s", buf );
 			return DRV_BOX_BAD;
 		}
 		time( &now );
@@ -282,16 +278,14 @@ maildir_validate( const char *prefix, const char *box, int create, maildir_store
 			nfsnprintf( buf + bl, sizeof(buf) - bl, "%s", entry->d_name );
 			if (stat( buf, &st )) {
 				if (errno != ENOENT)
-					error( "Maildir error: stat: %s: %s (errno %d)\n",
-					       buf, strerror(errno), errno );
+					sys_error( "Maildir error: cannot access %s", buf );
 			} else if (S_ISREG(st.st_mode) && now - st.st_ctime >= _24_HOURS) {
 				/* this should happen infrequently enough that it won't be
 				 * bothersome to the user to display when it occurs.
 				 */
 				info( "Maildir notice: removing stale file %s\n", buf );
 				if (unlink( buf ) && errno != ENOENT)
-					error( "Maildir error: unlink: %s: %s (errno %d)\n",
-					       buf, strerror(errno), errno );
+					sys_error( "Maildir error: cannot remove %s", buf );
 			}
 		}
 		closedir( dirp );
@@ -360,9 +354,8 @@ maildir_store_uid( maildir_store_t *ctx )
 }
 
 static int
-maildir_init_uid( maildir_store_t *ctx, const char *msg )
+maildir_init_uid( maildir_store_t *ctx )
 {
-	info( "Maildir notice: %s.\n", msg ? msg : "cannot read UIDVALIDITY, creating new" );
 	ctx->gen.uidvalidity = time( 0 );
 	ctx->nuid = 0;
 	ctx->uvok = 0;
@@ -374,6 +367,13 @@ maildir_init_uid( maildir_store_t *ctx, const char *msg )
 	}
 #endif /* USE_DB */
 	return maildir_store_uid( ctx );
+}
+
+static int
+maildir_init_uid_new( maildir_store_t *ctx )
+{
+	info( "Maildir notice: no UIDVALIDITY, creating new.\n" );
+	return maildir_init_uid( ctx );
 }
 
 static int
@@ -402,7 +402,7 @@ maildir_uidval_lock( maildir_store_t *ctx )
 	lseek( ctx->uvfd, 0, SEEK_SET );
 	if ((n = read( ctx->uvfd, buf, sizeof(buf) )) <= 0 ||
 	    (buf[n] = 0, sscanf( buf, "%d\n%d", &ctx->gen.uidvalidity, &ctx->nuid ) != 2)) {
-		return maildir_init_uid( ctx, 0 );
+		return maildir_init_uid_new( ctx );
 	} else
 		ctx->uvok = 1;
 	return DRV_OK;
@@ -532,7 +532,7 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 		for (i = 0; i < 2; i++) {
 			memcpy( buf + bl, subdirs[i], 4 );
 			if (!(d = opendir( buf ))) {
-				perror( buf );
+				sys_error( "Maildir error: cannot list %s", buf );
 #ifdef USE_DB
 				if (!ctx->db)
 #endif /* USE_DB */
@@ -633,7 +633,8 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 			entry = &msglist->ents[i];
 			if (entry->uid != INT_MAX) {
 				if (uid == entry->uid) {
-					if ((ret = maildir_init_uid( ctx, "duplicate UID; changing UIDVALIDITY" )) != DRV_OK) {
+					info( "Maildir notice: duplicate UID; changing UIDVALIDITY.\n");
+					if ((ret = maildir_init_uid( ctx )) != DRV_OK) {
 						maildir_free_scan( msglist );
 						return ret;
 					}
@@ -670,13 +671,14 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 				memcpy( nbuf, buf, bl + 4 );
 				nfsnprintf( nbuf + bl + 4, sizeof(nbuf) - bl - 4, "%s", entry->base );
 				if (rename( nbuf, buf )) {
-				  notok:
 					if (errno != ENOENT) {
-						perror( buf );
+						sys_error( "Maildir error: cannot rename %s to %s", nbuf, buf );
+					  fail:
 						maildir_uidval_unlock( ctx );
 						maildir_free_scan( msglist );
 						return DRV_BOX_BAD;
 					}
+				  retry:
 					maildir_free_scan( msglist );
 					goto again;
 				}
@@ -685,13 +687,23 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 				memcpy( entry->base, buf + bl + 4, fnl );
 			}
 			if (ctx->gen.opts & OPEN_SIZE) {
-				if (stat( buf, &st ))
-					goto notok;
+				if (stat( buf, &st )) {
+					if (errno != ENOENT) {
+						sys_error( "Maildir error: cannot stat %s", buf );
+						goto fail;
+					}
+					goto retry;
+				}
 				entry->size = st.st_size;
 			}
 			if (ctx->gen.opts & OPEN_FIND) {
-				if (!(f = fopen( buf, "r" )))
-					goto notok;
+				if (!(f = fopen( buf, "r" ))) {
+					if (errno != ENOENT) {
+						sys_error( "Maildir error: cannot open %s", buf );
+						goto fail;
+					}
+					goto retry;
+				}
 				while (fgets( nbuf, sizeof(nbuf), f )) {
 					if (!nbuf[0] || nbuf[0] == '\n')
 						break;
@@ -767,7 +779,7 @@ maildir_select( store_t *gctx, int create,
 	nfsnprintf( uvpath, sizeof(uvpath), "%s/.uidvalidity", gctx->path );
 #ifndef USE_DB
 	if ((ctx->uvfd = open( uvpath, O_RDWR|O_CREAT, 0600 )) < 0) {
-		perror( uvpath );
+		sys_error( "Maildir error: cannot write %s", uvpath );
 		cb( DRV_BOX_BAD, aux );
 		return;
 	}
@@ -783,7 +795,7 @@ maildir_select( store_t *gctx, int create,
 				if ((ctx->uvfd = open( uvpath, O_RDWR|O_CREAT, 0600 )) >= 0)
 					goto fnok;
 			}
-			perror( uvpath );
+			sys_error( "Maildir error: cannot write %s", uvpath );
 			cb( DRV_BOX_BAD, aux );
 			return;
 		}
@@ -793,7 +805,7 @@ maildir_select( store_t *gctx, int create,
 #endif
 		lck.l_type = F_WRLCK;
 		if (fcntl( ctx->uvfd, F_SETLKW, &lck )) {
-			perror( uvpath );
+			sys_error( "Maildir error: cannot lock %s", uvpath );
 		  bork:
 			close( ctx->uvfd );
 			ctx->uvfd = -1;
@@ -817,7 +829,7 @@ maildir_select( store_t *gctx, int create,
 				ctx->db->err( ctx->db, ret, "Maildir error: db->get()" );
 				goto dbork;
 			}
-			if (maildir_init_uid( ctx, 0 ) != DRV_OK)
+			if (maildir_init_uid_new( ctx ) != DRV_OK)
 				goto dbork;
 		} else {
 			ctx->gen.uidvalidity = ((int *)value.data)[0];
@@ -926,12 +938,13 @@ maildir_rescan( maildir_store_t *ctx )
 }
 
 static int
-maildir_again( maildir_store_t *ctx, maildir_message_t *msg, const char *fn )
+maildir_again( maildir_store_t *ctx, maildir_message_t *msg,
+               const char *err, const char *fn, const char *fn2 )
 {
 	int ret;
 
 	if (errno != ENOENT) {
-		perror( fn );
+		sys_error( err, fn, fn2 );
 		return DRV_BOX_BAD;
 	}
 	if ((ret = maildir_rescan( ctx )) != DRV_OK)
@@ -953,7 +966,7 @@ maildir_fetch_msg( store_t *gctx, message_t *gmsg, msg_data_t *data,
 		nfsnprintf( buf, sizeof(buf), "%s/%s/%s", gctx->path, subdirs[gmsg->status & M_RECENT], msg->base );
 		if ((fd = open( buf, O_RDONLY )) >= 0)
 			break;
-		if ((ret = maildir_again( ctx, msg, buf )) != DRV_OK) {
+		if ((ret = maildir_again( ctx, msg, "Cannot open %s", buf, 0 )) != DRV_OK) {
 			cb( ret, aux );
 			return;
 		}
@@ -962,7 +975,7 @@ maildir_fetch_msg( store_t *gctx, message_t *gmsg, msg_data_t *data,
 	data->len = st.st_size;
 	data->data = nfmalloc( data->len );
 	if (read( fd, data->data, data->len ) != data->len) {
-		perror( buf );
+		sys_error( "Maildir error: cannot read %s", buf );
 		close( fd );
 		cb( DRV_MSG_BAD, aux );
 		return;
@@ -1028,7 +1041,7 @@ maildir_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 	nfsnprintf( buf, sizeof(buf), "%s%s/tmp/%s%s", prefix, box, base, fbuf );
 	if ((fd = open( buf, O_WRONLY|O_CREAT|O_EXCL, 0600 )) < 0) {
 		if (errno != ENOENT) {
-			perror( buf );
+			sys_error( "Maildir error: cannot create %s", buf );
 			free( data->data );
 			cb( DRV_BOX_BAD, 0, aux );
 			return;
@@ -1039,7 +1052,7 @@ maildir_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 			return;
 		}
 		if ((fd = open( buf, O_WRONLY|O_CREAT|O_EXCL, 0600 )) < 0) {
-			perror( buf );
+			sys_error( "Maildir error: cannot create %s", buf );
 			free( data->data );
 			cb( DRV_BOX_BAD, 0, aux );
 			return;
@@ -1049,23 +1062,23 @@ maildir_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 	free( data->data );
 	if (ret != data->len) {
 		if (ret < 0)
-			perror( buf );
+			sys_error( "Maildir error: cannot write %s", buf );
 		else
-			error( "Maildir error: %s: partial write\n", buf );
+			error( "Maildir error: cannot write %s. Disk full?\n", buf );
 		close( fd );
 		cb( DRV_BOX_BAD, 0, aux );
 		return;
 	}
 	if (close( fd ) < 0) {
 		/* Quota exceeded may cause this. */
-		perror( buf );
+		sys_error( "Maildir error: cannot write %s", buf );
 		cb( DRV_BOX_BAD, 0, aux );
 		return;
 	}
 	/* Moving seen messages to cur/ is strictly speaking incorrect, but makes mutt happy. */
 	nfsnprintf( nbuf, sizeof(nbuf), "%s%s/%s/%s%s", prefix, box, subdirs[!(data->flags & F_SEEN)], base, fbuf );
 	if (rename( buf, nbuf )) {
-		perror( nbuf );
+		sys_error( "Maildir error: cannot rename %s to %s", buf, nbuf );
 		cb( DRV_BOX_BAD, 0, aux );
 		return;
 	}
@@ -1131,7 +1144,7 @@ maildir_set_flags( store_t *gctx, message_t *gmsg, int uid, int add, int del,
 		}
 		if (!rename( buf, nbuf ))
 			break;
-		if ((ret = maildir_again( ctx, msg, buf )) != DRV_OK) {
+		if ((ret = maildir_again( ctx, msg, "Maildir error: cannot rename %s to %s", buf, nbuf )) != DRV_OK) {
 			cb( ret, aux );
 			return;
 		}
@@ -1189,12 +1202,12 @@ maildir_trash_msg( store_t *gctx, message_t *gmsg,
 			if (!rename( buf, nbuf ))
 				break;
 			if (errno != ENOENT) {
-				perror( nbuf );
+				sys_error( "Maildir error: cannot move %s to %s", buf, nbuf );
 				cb( DRV_BOX_BAD, aux );
 				return;
 			}
 		}
-		if ((ret = maildir_again( ctx, msg, buf )) != DRV_OK) {
+		if ((ret = maildir_again( ctx, msg, "Maildir error: cannot move %s to %s", buf, nbuf )) != DRV_OK) {
 			cb( ret, aux );
 			return;
 		}
@@ -1232,7 +1245,7 @@ maildir_close( store_t *gctx,
 					if (errno == ENOENT)
 						retry = 1;
 					else
-						perror( buf );
+						sys_error( "Maildir error: cannot remove %s", buf );
 				} else {
 					msg->status |= M_DEAD;
 					gctx->count--;

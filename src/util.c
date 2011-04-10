@@ -120,6 +120,23 @@ error( const char *msg, ... )
 	va_end( va );
 }
 
+void
+sys_error( const char *msg, ... )
+{
+	va_list va;
+	char buf[1024];
+
+	if (need_nl) {
+		putchar( '\n' );
+		need_nl = 0;
+	}
+	va_start( va, msg );
+	if ((unsigned)vsnprintf( buf, sizeof(buf), msg, va ) >= sizeof(buf))
+		oob();
+	va_end( va );
+	perror( buf );
+}
+
 char *
 next_arg( char **s )
 {

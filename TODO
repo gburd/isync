@@ -15,8 +15,6 @@ quotas are weird, they make close() fail.
 
 clarify error cases of transactions.
 
-cleanup/improve error messages in the drivers.
-
 sync.c does not consider UID 0 valid, which is wrong. fixing this requires
 an incompatible change or a remapping hack in sync state files.
 

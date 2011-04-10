@@ -25,7 +25,6 @@
 
 #include <unistd.h>
 #include <limits.h>
-#include <errno.h>
 #include <pwd.h>
 #include <sys/types.h>
 #include <string.h>
@@ -272,7 +271,7 @@ load_config( const char *where, int pseudo )
 		info( "Reading configuration file %s\n", cfile.file );
 
 	if (!(cfile.fp = fopen( cfile.file, "r" ))) {
-		perror( "Cannot open config file" );
+		sys_error( "Cannot open config file '%s'", cfile.file );
 		return 1;
 	}
 	buf[sizeof(buf) - 1] = 0;

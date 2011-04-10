@@ -98,4 +98,5 @@ char *nfstrdup( const char *str );
 int nfvasprintf( char **str, const char *fmt, va_list va );
 int nfasprintf( char **str, const char *fmt, ... );
 int nfsnprintf( char *buf, int blen, const char *fmt, ... );
+void sys_error( const char *, ... );
 void ATTR_NORETURN oob( void );

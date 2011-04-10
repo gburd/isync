@@ -29,7 +29,6 @@
 #include <limits.h>
 #include <pwd.h>
 #include <stdio.h>
-#include <errno.h>
 #include <string.h>
 #include <ctype.h>
 #include <dirent.h>
@@ -336,7 +335,7 @@ main( int argc, char **argv )
 			struct dirent *de;
 
 			if (!(dir = opendir( xmaildir ))) {
-				fprintf( stderr, "%s: %s\n", xmaildir, strerror(errno) );
+				sys_error( "Cannot list '%s'", xmaildir );
 				return 1;
 			}
 			while ((de = readdir( dir ))) {
@@ -379,13 +378,13 @@ main( int argc, char **argv )
 			outconfig = path2;
 		}
 		if ((fd = creat( outconfig, 0666 )) < 0) {
-			fprintf( stderr, "Error: cannot write new config %s: %s\n", outconfig, strerror(errno) );
+			sys_error( "Error: cannot create config file '%s'", outconfig );
 			return 1;
 		}
 	} else {
 		strcpy( path2, "/tmp/mbsyncrcXXXXXX" );
 		if ((fd = mkstemp( path2 )) < 0) {
-			fprintf( stderr, "Can't create temp file\n" );
+			sys_error( "Error: cannot create temporary config file" );
 			return 1;
 		}
 	}
@@ -432,6 +431,6 @@ main( int argc, char **argv )
 				add_arg( &args, find_box( argv[optind] )->channel_name );
 	}
 	execvp( args[0], args );
-	perror( args[0] );
+	sys_error( "Cannot execute %s", args[0] );
 	return 1;
 }

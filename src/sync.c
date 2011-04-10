@@ -40,7 +40,7 @@ void
 Fclose( FILE *f )
 {
 	if (fclose( f ) == EOF) {
-		perror( "cannot close file" );
+		sys_error( "Error: cannot close file. Disk full?" );
 		exit( 1 );
 	}
 }
@@ -55,7 +55,7 @@ Fprintf( FILE *f, const char *msg, ... )
 	r = vfprintf( f, msg, va );
 	va_end( va );
 	if (r < 0) {
-		perror( "cannot write file" );
+		sys_error( "Error: cannot write file. Disk full?" );
 		exit( 1 );
 	}
 }
@@ -624,12 +624,12 @@ box_selected( int sts, void *aux )
 		}
 		free( csname );
 		if (!(s = strrchr( svars->dname, '/' ))) {
-			error( "Error: invalid SyncState '%s'\n", svars->dname );
+			error( "Error: invalid SyncState location '%s'\n", svars->dname );
 			goto sbail;
 		}
 		*s = 0;
 		if (mkdir( svars->dname, 0700 ) && errno != EEXIST) {
-			error( "Error: cannot create SyncState directory '%s': %s\n", svars->dname, strerror(errno) );
+			sys_error( "Error: cannot create SyncState directory '%s'", svars->dname );
 			goto sbail;
 		}
 		*s = '/';
@@ -645,7 +645,7 @@ box_selected( int sts, void *aux )
 	lck.l_type = F_WRLCK;
 #endif
 	if ((svars->lfd = open( svars->lname, O_WRONLY|O_CREAT, 0666 )) < 0) {
-		error( "Error: cannot create lock file %s: %s\n", svars->lname, strerror(errno) );
+		sys_error( "Error: cannot create lock file %s", svars->lname );
 		svars->ret = SYNC_FAIL;
 		sync_bail2( svars );
 		return;

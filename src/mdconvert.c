@@ -35,6 +35,32 @@
 
 #define EXE "mdconvert"
 
+#if __GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ > 4)
+# define ATTR_NORETURN __attribute__((noreturn))
+#else
+# define ATTR_NORETURN
+#endif
+
+static void ATTR_NORETURN
+oob( void )
+{
+	fputs( "Fatal: buffer too small. Please report a bug.\n", stderr );
+	abort();
+}
+
+static void
+sys_error( const char *msg, ... )
+{
+	va_list va;
+	char buf[1024];
+
+	va_start( va, msg );
+	if ((unsigned)vsnprintf( buf, sizeof(buf), msg, va ) >= sizeof(buf))
+		oob();
+	va_end( va );
+	perror( buf );
+}
+
 static int
 nfsnprintf( char *buf, int blen, const char *fmt, ... )
 {
@@ -42,10 +68,8 @@ nfsnprintf( char *buf, int blen, const char *fmt, ... )
 	va_list va;
 
 	va_start( va, fmt );
-	if (blen <= 0 || (unsigned)(ret = vsnprintf( buf, blen, fmt, va )) >= (unsigned)blen) {
-		fputs( "Fatal: buffer too small. Please report a bug.\n", stderr );
-		abort();
-	}
+	if (blen <= 0 || (unsigned)(ret = vsnprintf( buf, blen, fmt, va )) >= (unsigned)blen)
+		oob();
 	va_end( va );
 	return ret;
 }
@@ -81,15 +105,15 @@ convert( const char *box, int altmap )
 	nfsnprintf( tdpath, sizeof(tdpath), "%s.tmp", dpath );
 	if ((sfd = open( spath, O_RDWR )) < 0) {
 		if (errno != ENOENT)
-			perror( spath );
+			sys_error( "Cannot open %s", spath );
 		return 1;
 	}
 	if (fcntl( sfd, F_SETLKW, &lck )) {
-		perror( spath );
+		sys_error( "Cannot lock %s", spath );
 		goto sbork;
 	}
 	if ((dfd = open( tdpath, O_RDWR|O_CREAT, 0600 )) < 0) {
-		perror( tdpath );
+		sys_error( "Cannot create %s", tdpath );
 		goto sbork;
 	}
 	if (db_create( &db, 0, 0 )) {
@@ -138,7 +162,7 @@ convert( const char *box, int altmap )
 	for (i = 0; i < 2; i++) {
 		bl = nfsnprintf( buf, sizeof(buf), "%s/%s/", box, subdirs[i] );
 		if (!(d = opendir( buf ))) {
-			perror( "opendir" );
+			sys_error( "Cannot list %s", buf );
 			goto dbork;
 		}
 		while ((e = readdir( d ))) {
@@ -185,7 +209,7 @@ convert( const char *box, int altmap )
 			if (rename( buf, buf2 )) {
 				if (errno == ENOENT)
 					goto again;
-				perror( buf );
+				sys_error( "Cannot rename %s to %s", buf, buf2 );
 			  ebork:
 				closedir( d );
 				goto dbork;
@@ -198,11 +222,11 @@ convert( const char *box, int altmap )
 	db->close( db, 0 );
 	close( dfd );
 	if (rename( tdpath, dpath )) {
-		perror( dpath );
+		sys_error( "Cannot rename %s to %s", tdpath, dpath );
 		return 1;
 	}
 	if (unlink( spath ))
-		perror( spath );
+		sys_error( "Cannot remove %s", spath );
 	close( sfd );
 	return 0;
 }

@@ -97,7 +97,7 @@ load_config( const char *path, config_t ***stor )
 
 	if (!(fp = fopen( path, "r" ))) {
 		if (errno != ENOENT)
-			perror( "fopen" );
+			sys_error( "Cannot read config file '%s'", path );
 		return;
 	}
 	if (!Quiet && !Debug && !Verbose)

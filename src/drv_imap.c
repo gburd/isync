@@ -30,7 +30,6 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <limits.h>
-#include <errno.h>
 #include <string.h>
 #include <ctype.h>
 
@@ -841,7 +840,7 @@ imap_socket_read( void *aux )
 		if (*arg == '*') {
 			arg = next_arg( &cmd );
 			if (!arg) {
-				error( "IMAP error: unable to parse untagged response\n" );
+				error( "IMAP error: malformed untagged response\n" );
 				break;
 			}
 
@@ -1838,8 +1837,8 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 		else if (!strcasecmp( "CertificateFile", cfg->cmd )) {
 			server->sconf.cert_file = expand_strdup( cfg->val );
 			if (access( server->sconf.cert_file, R_OK )) {
-				error( "%s:%d: CertificateFile '%s': %s\n",
-				       cfg->file, cfg->line, server->sconf.cert_file, strerror( errno ) );
+				sys_error( "%s:%d: CertificateFile '%s'",
+				           cfg->file, cfg->line, server->sconf.cert_file );
 				*err = 1;
 			}
 		} else if (!strcasecmp( "RequireSSL", cfg->cmd ))

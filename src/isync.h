@@ -83,6 +83,7 @@ typedef struct {
 	int fd;
 	int state;
 	const server_conf_t *conf; /* needed during connect */
+	char *name;
 #ifdef HAVE_LIBSSL
 	SSL *ssl;
 #endif
@@ -366,6 +367,7 @@ static INLINE void socket_init( conn_t *conn,
 	conn->write_callback = write_callback;
 	conn->callback_aux = aux;
 	conn->fd = -1;
+	conn->name = 0;
 	conn->write_buf_append = &conn->write_buf;
 }
 void socket_connect( conn_t *conn, void (*cb)( int ok, void *aux ) );
@@ -397,6 +399,7 @@ void info( const char *, ... );
 void infon( const char *, ... );
 void warn( const char *, ... );
 void error( const char *, ... );
+void sys_error( const char *, ... );
 
 char *next_arg( char ** );
 
