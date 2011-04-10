@@ -1,7 +1,7 @@
 /*
  * mbsync - mailbox synchronizer
  * Copyright (C) 2000-2002 Michael R. Elkins <me@mutt.org>
- * Copyright (C) 2002-2006 Oswald Buddenhagen <ossi@users.sf.net>
+ * Copyright (C) 2002-2006,2010-2012 Oswald Buddenhagen <ossi@users.sf.net>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -47,7 +47,7 @@ usage( int code )
 	fputs(
 PACKAGE " " VERSION " - mailbox synchronizer\n"
 "Copyright (C) 2000-2002 Michael R. Elkins <me@mutt.org>\n"
-"Copyright (C) 2002-2006 Oswald Buddenhagen <ossi@users.sf.net>\n"
+"Copyright (C) 2002-2006,2008,2010-2012 Oswald Buddenhagen <ossi@users.sf.net>\n"
 "Copyright (C) 2004 Theodore Ts'o <tytso@mit.edu>\n"
 "usage:\n"
 " " EXE " [flags] {{channel[:box,...]|group} ...|-a}\n"

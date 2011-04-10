@@ -77,7 +77,8 @@ usage( int code )
 	fputs(
 PACKAGE " " VERSION " - mbsync wrapper: IMAP4 to maildir synchronizer\n"
 "Copyright (C) 2000-2002 Michael R. Elkins <me@mutt.org>\n"
-"Copyright (C) 2002-2004 Oswald Buddenhagen <ossi@users.sf.net>\n"
+"Copyright (C) 2002-2006,2008,2010-2012 Oswald Buddenhagen <ossi@users.sf.net>\n"
+"Copyright (C) 2004 Theodore Ts'o <tytso@mit.edu>\n"
 "usage:\n"
 " " PACKAGE " [ flags ] mailbox [mailbox ...]\n"
 " " PACKAGE " [ flags ] -a\n"
