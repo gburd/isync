@@ -147,7 +147,7 @@ verify_cert( const server_conf_t *conf, Socket_t *sock )
 		if (!(fp = fopen( conf->cert_file, "rt" ))) {
 			error( "Unable to load CertificateFile '%s': %s\n",
 			       conf->cert_file, strerror( errno ) );
-			return 0;
+			return -1;
 		}
 		err = -1;
 		for (lcert = 0; READ_X509_KEY( fp, &lcert ); )
