@@ -498,6 +498,7 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 	if (!strcmp( chan->sync_state ? chan->sync_state : global_sync_state, "*" )) {
 		if (!ctx[S]->path) {
 			error( "Error: store '%s' does not support in-box sync state\n", chan->stores[S]->name );
+		  sbail:
 			free( svars );
 			cb( SYNC_BAD(S), aux );
 			return;
@@ -518,17 +519,13 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 	if (!(s = strrchr( svars->dname, '/' ))) {
 		error( "Error: invalid SyncState '%s'\n", svars->dname );
 		free( svars->dname );
-		free( svars );
-		cb( SYNC_BAD(S), aux );
-		return;
+		goto sbail;
 	}
 	*s = 0;
 	if (mkdir( svars->dname, 0700 ) && errno != EEXIST) {
 		error( "Error: cannot create SyncState directory '%s': %s\n", svars->dname, strerror(errno) );
 		free( svars->dname );
-		free( svars );
-		cb( SYNC_BAD(S), aux );
-		return;
+		goto sbail;
 	}
 	*s = '/';
 	nfasprintf( &svars->jname, "%s.journal", svars->dname );
@@ -558,35 +555,28 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 		debug( "reading sync state %s ...\n", svars->dname );
 		if (!fgets( buf, sizeof(buf), jfp ) || !(t = strlen( buf )) || buf[t - 1] != '\n') {
 			error( "Error: incomplete sync state header in %s\n", svars->dname );
+		  jbail:
 			fclose( jfp );
+		  bail:
 			svars->ret = SYNC_FAIL;
 			sync_bail( svars );
 			return;
 		}
 		if (sscanf( buf, "%d:%d %d:%d:%d", &svars->uidval[M], &svars->maxuid[M], &svars->uidval[S], &svars->smaxxuid, &svars->maxuid[S]) != 5) {
 			error( "Error: invalid sync state header in %s\n", svars->dname );
-			fclose( jfp );
-			svars->ret = SYNC_FAIL;
-			sync_bail( svars );
-			return;
+			goto jbail;
 		}
 		line = 1;
 		while (fgets( buf, sizeof(buf), jfp )) {
 			line++;
 			if (!(t = strlen( buf )) || buf[t - 1] != '\n') {
 				error( "Error: incomplete sync state entry at %s:%d\n", svars->dname, line );
-				fclose( jfp );
-				svars->ret = SYNC_FAIL;
-				sync_bail( svars );
-				return;
+				goto jbail;
 			}
 			fbuf[0] = 0;
 			if (sscanf( buf, "%d %d %15s", &t1, &t2, fbuf ) < 2) {
 				error( "Error: invalid sync state entry at %s:%d\n", svars->dname, line );
-				fclose( jfp );
-				svars->ret = SYNC_FAIL;
-				sync_bail( svars );
-				return;
+				goto jbail;
 			}
 			srec = nfmalloc( sizeof(*srec) );
 			srec->uid[M] = t1;
@@ -609,9 +599,7 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 	} else {
 		if (errno != ENOENT) {
 			error( "Error: cannot read sync state %s\n", svars->dname );
-			svars->ret = SYNC_FAIL;
-			sync_bail( svars );
-			return;
+			goto bail;
 		}
 	}
 	line = 0;
@@ -620,18 +608,12 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 			debug( "recovering journal ...\n" );
 			if (!(t = strlen( buf )) || buf[t - 1] != '\n') {
 				error( "Error: incomplete journal header in %s\n", svars->jname );
-				fclose( jfp );
-				svars->ret = SYNC_FAIL;
-				sync_bail( svars );
-				return;
+				goto jbail;
 			}
 			if (memcmp( buf, JOURNAL_VERSION "\n", strlen(JOURNAL_VERSION) + 1 )) {
 				error( "Error: incompatible journal version "
 				                 "(got %.*s, expected " JOURNAL_VERSION ")\n", t - 1, buf );
-				fclose( jfp );
-				svars->ret = SYNC_FAIL;
-				sync_bail( svars );
-				return;
+				goto jbail;
 			}
 			srec = 0;
 			line = 1;
@@ -639,10 +621,7 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 				line++;
 				if (!(t = strlen( buf )) || buf[t - 1] != '\n') {
 					error( "Error: incomplete journal entry at %s:%d\n", svars->jname, line );
-					fclose( jfp );
-					svars->ret = SYNC_FAIL;
-					sync_bail( svars );
-					return;
+					goto jbail;
 				}
 				if (buf[0] == '#' ?
 				      (t3 = 0, (sscanf( buf + 2, "%d %d %n", &t1, &t2, &t3 ) < 2) || !t3 || (t - t3 != TUIDL + 3)) :
@@ -653,10 +632,7 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 				          (sscanf( buf + 2, "%d %d %d", &t1, &t2, &t3 ) != 3))
 				{
 					error( "Error: malformed journal entry at %s:%d\n", svars->jname, line );
-					fclose( jfp );
-					svars->ret = SYNC_FAIL;
-					sync_bail( svars );
-					return;
+					goto jbail;
 				}
 				if (buf[0] == '(')
 					svars->maxuid[M] = t1;
@@ -685,10 +661,7 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 						if (srec->uid[M] == t1 && srec->uid[S] == t2)
 							goto syncfnd;
 					error( "Error: journal entry at %s:%d refers to non-existing sync state entry\n", svars->jname, line );
-					fclose( jfp );
-					svars->ret = SYNC_FAIL;
-					sync_bail( svars );
-					return;
+					goto jbail;
 				  syncfnd:
 					debugn( "  entry(%d,%d,%u) ", srec->uid[M], srec->uid[S], srec->flags );
 					switch (buf[0]) {
@@ -746,10 +719,7 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 						break;
 					default:
 						error( "Error: unrecognized journal entry at %s:%d\n", svars->jname, line );
-						fclose( jfp );
-						svars->ret = SYNC_FAIL;
-						sync_bail( svars );
-						return;
+						goto jbail;
 					}
 				}
 			}
@@ -758,23 +728,17 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 	} else {
 		if (errno != ENOENT) {
 			error( "Error: cannot read journal %s\n", svars->jname );
-			svars->ret = SYNC_FAIL;
-			sync_bail( svars );
-			return;
+			goto bail;
 		}
 	}
 	if (!(svars->nfp = fopen( svars->nname, "w" ))) {
 		error( "Error: cannot write new sync state %s\n", svars->nname );
-		svars->ret = SYNC_FAIL;
-		sync_bail( svars );
-		return;
+		goto bail;
 	}
 	if (!(svars->jfp = fopen( svars->jname, "a" ))) {
 		error( "Error: cannot write journal %s\n", svars->jname );
 		fclose( svars->nfp );
-		svars->ret = SYNC_FAIL;
-		sync_bail( svars );
-		return;
+		goto bail;
 	}
 	setlinebuf( svars->jfp );
 	if (!line)
