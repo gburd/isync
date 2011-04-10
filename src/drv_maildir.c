@@ -24,6 +24,7 @@
 
 #include "isync.h"
 
+#include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -57,13 +58,12 @@ typedef struct maildir_store_conf {
 typedef struct maildir_message {
 	message_t gen;
 	char *base;
-	char tuid[TUIDL];
 } maildir_message_t;
 
 typedef struct maildir_store {
 	store_t gen;
 	int uvfd, uvok, nuid;
-	int minuid, maxuid, nexcs, *excs;
+	int minuid, maxuid, newuid, nexcs, *excs;
 #ifdef USE_DB
 	DB *db;
 #endif /* USE_DB */
@@ -642,7 +642,7 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 					goto again;
 				}
 				uid = entry->uid;
-				if (ctx->gen.opts & (OPEN_SIZE|OPEN_FIND))
+				if ((ctx->gen.opts & OPEN_SIZE) || ((ctx->gen.opts & OPEN_FIND) && uid >= ctx->newuid))
 					nfsnprintf( buf + bl, sizeof(buf) - bl, "%s/%s", subdirs[entry->recent], entry->base );
 #ifdef USE_DB
 			} else if (ctx->db) {
@@ -651,7 +651,7 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 					return ret;
 				}
 				entry->uid = uid;
-				if (ctx->gen.opts & (OPEN_SIZE|OPEN_FIND))
+				if ((ctx->gen.opts & OPEN_SIZE) || ((ctx->gen.opts & OPEN_FIND) && uid >= ctx->newuid))
 					nfsnprintf( buf + bl, sizeof(buf) - bl, "%s/%s", subdirs[entry->recent], entry->base );
 #endif /* USE_DB */
 			} else {
@@ -696,7 +696,7 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 				}
 				entry->size = st.st_size;
 			}
-			if (ctx->gen.opts & OPEN_FIND) {
+			if ((ctx->gen.opts & OPEN_FIND) && uid >= ctx->newuid) {
 				if (!(f = fopen( buf, "r" ))) {
 					if (errno != ENOENT) {
 						sys_error( "Maildir error: cannot open %s", buf );
@@ -730,7 +730,8 @@ maildir_init_msg( maildir_store_t *ctx, maildir_message_t *msg, msg_t *entry )
 	msg->base = entry->base;
 	entry->base = 0; /* prevent deletion */
 	msg->gen.size = entry->size;
-	strncpy( msg->tuid, entry->tuid, TUIDL );
+	msg->gen.srec = 0;
+	strncpy( msg->gen.tuid, entry->tuid, TUIDL );
 	if (entry->recent)
 		msg->gen.status |= M_RECENT;
 	if (ctx->gen.opts & OPEN_FLAGS) {
@@ -861,7 +862,7 @@ maildir_prepare_opts( store_t *gctx, int opts )
 }
 
 static void
-maildir_load( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
+maildir_load( store_t *gctx, int minuid, int maxuid, int newuid, int *excs, int nexcs,
               void (*cb)( int sts, void *aux ), void *aux )
 {
 	maildir_store_t *ctx = (maildir_store_t *)gctx;
@@ -871,6 +872,7 @@ maildir_load( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 
 	ctx->minuid = minuid;
 	ctx->maxuid = maxuid;
+	ctx->newuid = newuid;
 	ctx->excs = nfrealloc( excs, nexcs * sizeof(int) );
 	ctx->nexcs = nexcs;
 
@@ -1086,18 +1088,10 @@ maildir_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 }
 
 static void
-maildir_find_msg( store_t *gctx, const char *tuid,
-                  void (*cb)( int sts, int uid, void *aux ), void *aux )
+maildir_find_new_msgs( store_t *gctx ATTR_UNUSED,
+                       void (*cb)( int sts, void *aux ) ATTR_UNUSED, void *aux ATTR_UNUSED )
 {
-	message_t *msg;
-
-	/* using a hash table might turn out to be more appropriate ... */
-	for (msg = gctx->msgs; msg; msg = msg->next)
-		if (!(msg->status & M_DEAD) && !memcmp( ((maildir_message_t *)msg)->tuid, tuid, TUIDL )) {
-			cb( DRV_OK, msg->uid, aux );
-			return;
-		}
-	cb( DRV_MSG_BAD, -1, aux );
+	assert( !"maildir_find_new_msgs is not supposed to be called" );
 }
 
 static void
@@ -1324,7 +1318,7 @@ struct driver maildir_driver = {
 	maildir_load,
 	maildir_fetch_msg,
 	maildir_store_msg,
-	maildir_find_msg,
+	maildir_find_new_msgs,
 	maildir_set_flags,
 	maildir_trash_msg,
 	maildir_close,

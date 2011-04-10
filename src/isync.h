@@ -184,6 +184,8 @@ typedef struct group_conf {
 #define M_DEAD         (1<<1) /* expunged */
 #define M_FLAGS        (1<<2) /* flags fetched */
 
+#define TUIDL 12
+
 typedef struct message {
 	struct message *next;
 	struct sync_rec *srec;
@@ -191,6 +193,7 @@ typedef struct message {
 	size_t size; /* zero implies "not fetched" */
 	int uid;
 	unsigned char flags, status;
+	char tuid[TUIDL];
 } message_t;
 
 /* For opts, both in store and driver_t->select() */
@@ -217,6 +220,7 @@ typedef struct store {
 	char *path; /* own */
 	message_t *msgs; /* own */
 	int uidvalidity;
+	int uidnext; /* from SELECT responses */
 	unsigned opts; /* maybe preset? */
 	/* note that the following do _not_ reflect stats from msgs, but mailbox totals */
 	int count; /* # of messages */
@@ -254,8 +258,6 @@ typedef struct {
    and as CRLF is the canonical format, we convert.
 */
 #define DRV_CRLF        1
-
-#define TUIDL 12
 
 struct driver {
 	int flags;
@@ -298,8 +300,9 @@ struct driver {
 	/* Load the message attributes needed to perform the requested operations.
 	 * Consider only messages with UIDs between minuid and maxuid (inclusive)
 	 * and those named in the excs array (smaller than minuid).
-	 * The driver takes ownership of the excs array. */
-	void (*load)( store_t *ctx, int minuid, int maxuid, int *excs, int nexcs,
+	 * The driver takes ownership of the excs array. Messages below newuid do not need
+	 * to have the TUID populated even if OPEN_FIND is set. */
+	void (*load)( store_t *ctx, int minuid, int maxuid, int newuid, int *excs, int nexcs,
 	              void (*cb)( int sts, void *aux ), void *aux );
 
 	/* Fetch the contents and flags of the given message from the current mailbox. */
@@ -311,9 +314,11 @@ struct driver {
 	void (*store_msg)( store_t *ctx, msg_data_t *data, int to_trash,
 	                   void (*cb)( int sts, int uid, void *aux ), void *aux );
 
-	/* Find a message by its temporary UID header to determine its real UID. */
-	void (*find_msg)( store_t *ctx, const char *tuid,
-	                  void (*cb)( int sts, int uid, void *aux ), void *aux );
+	/* Index the messages which have newly appeared in the mailbox, including their
+	 * temporary UID headers. This is needed if store_msg() does not guarantee returning
+	 * a UID; otherwise the driver needs to implement only the OPEN_FIND flag. */
+	void (*find_new_msgs)( store_t *ctx,
+	                       void (*cb)( int sts, void *aux ), void *aux );
 
 	/* Add/remove the named flags to/from the given message. The message may be either
 	 * a pre-fetched one (in which case the in-memory representation is updated),

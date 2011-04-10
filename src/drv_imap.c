@@ -79,7 +79,6 @@ typedef struct imap_store {
 	store_t gen;
 	const char *prefix;
 	int ref_count;
-	int uidnext; /* from SELECT responses */
 	/* trash folder's existence is not confirmed yet */
 	enum { TrashUnknown, TrashChecking, TrashKnown } trashnc;
 	unsigned got_namespace:1;
@@ -602,7 +601,7 @@ static int
 parse_fetch( imap_store_t *ctx, list_t *list )
 {
 	list_t *tmp, *flags;
-	char *body = 0;
+	char *body = 0, *tuid = 0;
 	imap_message_t *cur;
 	msg_data_t *msgdata;
 	struct imap_cmd *cmdp;
@@ -663,6 +662,20 @@ parse_fetch( imap_store_t *ctx, list_t *list )
 					size = tmp->len;
 				} else
 					error( "IMAP error: unable to parse BODY[]\n" );
+			} else if (!strcmp( "BODY[HEADER.FIELDS", tmp->val )) {
+				tmp = tmp->next;
+				if (is_list( tmp )) {
+					tmp = tmp->next;
+					if (!is_atom( tmp ) || strcmp( tmp->val, "]" ))
+						goto bfail;
+					tmp = tmp->next;
+					if (!is_atom( tmp ) || memcmp( tmp->val, "X-TUID: ", 8 ))
+						goto bfail;
+					tuid = tmp->val + 8;
+				} else {
+				  bfail:
+					error( "IMAP error: unable to parse BODY[HEADER.FIELDS ...]\n" );
+				}
 			}
 		}
 	}
@@ -690,6 +703,13 @@ parse_fetch( imap_store_t *ctx, list_t *list )
 		cur->gen.flags = mask;
 		cur->gen.status = status;
 		cur->gen.size = size;
+		cur->gen.srec = 0;
+		if (tuid)
+			strncpy( cur->gen.tuid, tuid, TUIDL );
+		else
+			cur->gen.tuid[0] = 0;
+		if (ctx->gen.uidnext <= uid) /* in case the server sends no UIDNEXT */
+			ctx->gen.uidnext = uid + 1;
 	}
 
 	free_list( list );
@@ -731,7 +751,7 @@ parse_response_code( imap_store_t *ctx, struct imap_cmd *cmd, char *s )
 			return RESP_CANCEL;
 		}
 	} else if (!strcmp( "UIDNEXT", arg )) {
-		if (!(arg = next_arg( &s )) || (ctx->uidnext = strtol( arg, &p, 10 ), *p)) {
+		if (!(arg = next_arg( &s )) || (ctx->gen.uidnext = strtol( arg, &p, 10 ), *p)) {
 			error( "IMAP error: malformed NEXTUID status\n" );
 			return RESP_CANCEL;
 		}
@@ -754,35 +774,6 @@ parse_response_code( imap_store_t *ctx, struct imap_cmd *cmd, char *s )
 		}
 	}
 	return RESP_OK;
-}
-
-static void
-parse_search( imap_store_t *ctx, char *cmd )
-{
-	char *arg;
-	struct imap_cmd *cmdp;
-	int uid;
-
-	if (!(arg = next_arg( &cmd )))
-		uid = -1;
-	else if (!(uid = atoi( arg ))) {
-		error( "IMAP error: malformed SEARCH response\n" );
-		return;
-	} else if (next_arg( &cmd )) {
-		warn( "IMAP warning: SEARCH returns multiple matches\n" );
-		uid = -1; /* to avoid havoc */
-	}
-
-	/* Find the first command that expects a UID - this is guaranteed
-	 * to come in-order, as there are no other means to identify which
-	 * SEARCH response belongs to which request.
-	 */
-	for (cmdp = ctx->in_progress; cmdp; cmdp = cmdp->next)
-		if (cmdp->param.uid == -1) {
-			((struct imap_cmd_out_uid *)cmdp)->out_uid = uid;
-			return;
-		}
-	error( "IMAP error: unexpected SEARCH response (UID %u)\n", uid );
 }
 
 static void
@@ -861,8 +852,6 @@ imap_socket_read( void *aux )
 				parse_capability( ctx, cmd );
 			else if (!strcmp( "LIST", arg ))
 				parse_list_rsp( ctx, cmd );
-			else if (!strcmp( "SEARCH", arg ))
-				parse_search( ctx, cmd );
 			else if ((arg1 = next_arg( &cmd ))) {
 				if (!strcmp( "EXISTS", arg1 ))
 					ctx->gen.count = atoi( arg );
@@ -980,7 +969,7 @@ get_cmd_result_p2( imap_store_t *ctx, struct imap_cmd *cmd, int response )
 	if (response != RESP_OK) {
 		done_imap_cmd( ctx, ocmd, response );
 	} else {
-		ctx->uidnext = 0;
+		ctx->gen.uidnext = 0;
 		if (ocmd->param.to_trash)
 			ctx->trashnc = TrashKnown;
 		ocmd->param.create = 0;
@@ -1447,7 +1436,7 @@ imap_select( store_t *gctx, int create,
 		prefix = ctx->prefix;
 	}
 
-	ctx->uidnext = -1;
+	ctx->gen.uidnext = -1;
 
 	INIT_IMAP_CMD(imap_cmd_simple, cmd, cb, aux)
 	cmd->gen.param.create = create;
@@ -1458,11 +1447,11 @@ imap_select( store_t *gctx, int create,
 
 /******************* imap_load *******************/
 
-static int imap_submit_load( imap_store_t *, const char *, struct imap_cmd_refcounted_state * );
+static int imap_submit_load( imap_store_t *, const char *, int, struct imap_cmd_refcounted_state * );
 static void imap_load_p2( imap_store_t *, struct imap_cmd *, int );
 
 static void
-imap_load( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
+imap_load( store_t *gctx, int minuid, int maxuid, int newuid, int *excs, int nexcs,
            void (*cb)( int sts, void *aux ), void *aux )
 {
 	imap_store_t *ctx = (imap_store_t *)gctx;
@@ -1487,14 +1476,21 @@ imap_load( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 				if (i != j)
 					bl += sprintf( buf + bl, ":%d", excs[i] );
 			}
-			if (imap_submit_load( ctx, buf, sts ) < 0)
+			if (imap_submit_load( ctx, buf, 0, sts ) < 0)
 				goto done;
 		}
 		if (maxuid == INT_MAX)
-			maxuid = ctx->uidnext >= 0 ? ctx->uidnext - 1 : 1000000000;
+			maxuid = ctx->gen.uidnext >= 0 ? ctx->gen.uidnext - 1 : 1000000000;
 		if (maxuid >= minuid) {
-			sprintf( buf, "%d:%d", minuid, maxuid );
-			imap_submit_load( ctx, buf, sts );
+			if ((ctx->gen.opts & OPEN_FIND) && minuid < newuid) {
+				sprintf( buf, "%d:%d", minuid, newuid - 1 );
+				if (imap_submit_load( ctx, buf, 0, sts ) < 0)
+					goto done;
+				sprintf( buf, "%d:%d", newuid, maxuid );
+			} else {
+				sprintf( buf, "%d:%d", minuid, maxuid );
+			}
+			imap_submit_load( ctx, buf, (ctx->gen.opts & OPEN_FIND), sts );
 		}
 	  done:
 		free( excs );
@@ -1503,12 +1499,13 @@ imap_load( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 }
 
 static int
-imap_submit_load( imap_store_t *ctx, const char *buf, struct imap_cmd_refcounted_state *sts )
+imap_submit_load( imap_store_t *ctx, const char *buf, int tuids, struct imap_cmd_refcounted_state *sts )
 {
 	return imap_exec( ctx, imap_refcounted_new_cmd( sts ), imap_load_p2,
-	                  "UID FETCH %s (UID%s%s)", buf,
+	                  "UID FETCH %s (UID%s%s%s)", buf,
 	                  (ctx->gen.opts & OPEN_FLAGS) ? " FLAGS" : "",
-	                  (ctx->gen.opts & OPEN_SIZE) ? " RFC822.SIZE" : "" );
+	                  (ctx->gen.opts & OPEN_SIZE) ? " RFC822.SIZE" : "",
+	                  tuids ? " BODY.PEEK[HEADER.FIELDS (X-TUID)]" : "");
 }
 
 static void
@@ -1693,35 +1690,18 @@ imap_store_msg_p2( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int resp
 	cmdp->callback( response, cmdp->out_uid, cmdp->callback_aux );
 }
 
-/******************* imap_find_msg *******************/
-
-static void imap_find_msg_p2( imap_store_t *, struct imap_cmd *, int );
+/******************* imap_find_new_msgs *******************/
 
 static void
-imap_find_msg( store_t *gctx, const char *tuid,
-               void (*cb)( int sts, int uid, void *aux ), void *aux )
+imap_find_new_msgs( store_t *gctx,
+                    void (*cb)( int sts, void *aux ), void *aux )
 {
 	imap_store_t *ctx = (imap_store_t *)gctx;
-	struct imap_cmd_out_uid *cmd;
+	struct imap_cmd_simple *cmd;
 
-	INIT_IMAP_CMD(imap_cmd_out_uid, cmd, cb, aux)
-	cmd->gen.param.uid = -1; /* we're looking for a UID */
-	cmd->out_uid = -1; /* in case we get no SEARCH response at all */
-	imap_exec( ctx, &cmd->gen, imap_find_msg_p2,
-	           "UID SEARCH HEADER X-TUID %." stringify(TUIDL) "s", tuid );
-}
-
-static void
-imap_find_msg_p2( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int response )
-{
-	struct imap_cmd_out_uid *cmdp = (struct imap_cmd_out_uid *)cmd;
-
-	transform_msg_response( &response );
-	if (response != DRV_OK)
-		cmdp->callback( response, -1, cmdp->callback_aux );
-	else
-		cmdp->callback( cmdp->out_uid <= 0 ? DRV_MSG_BAD : DRV_OK,
-		                cmdp->out_uid, cmdp->callback_aux );
+	INIT_IMAP_CMD(imap_cmd_simple, cmd, cb, aux)
+	imap_exec( (imap_store_t *)ctx, &cmd->gen, imap_done_simple_box,
+	           "UID FETCH %d:1000000000 (UID BODY.PEEK[HEADER.FIELDS (X-TUID)])", ctx->gen.uidnext );
 }
 
 /******************* imap_list *******************/
@@ -1917,7 +1897,7 @@ struct driver imap_driver = {
 	imap_load,
 	imap_fetch_msg,
 	imap_store_msg,
-	imap_find_msg,
+	imap_find_new_msgs,
 	imap_set_flags,
 	imap_trash_msg,
 	imap_close,
