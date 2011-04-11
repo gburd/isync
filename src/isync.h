@@ -393,13 +393,13 @@ void cram( const char *challenge, const char *user, const char *pass,
 
 extern int DFlags;
 
-void debug( const char *, ... );
-void debugn( const char *, ... );
-void info( const char *, ... );
-void infon( const char *, ... );
-void warn( const char *, ... );
-void error( const char *, ... );
-void sys_error( const char *, ... );
+void ATTR_PRINTFLIKE(1, 2) debug( const char *, ... );
+void ATTR_PRINTFLIKE(1, 2) debugn( const char *, ... );
+void ATTR_PRINTFLIKE(1, 2) info( const char *, ... );
+void ATTR_PRINTFLIKE(1, 2) infon( const char *, ... );
+void ATTR_PRINTFLIKE(1, 2) warn( const char *, ... );
+void ATTR_PRINTFLIKE(1, 2) error( const char *, ... );
+void ATTR_PRINTFLIKE(1, 2) sys_error( const char *, ... );
 void flushn( void );
 
 char *next_arg( char ** );
@@ -414,8 +414,8 @@ void *nfcalloc( size_t sz );
 void *nfrealloc( void *mem, size_t sz );
 char *nfstrdup( const char *str );
 int nfvasprintf( char **str, const char *fmt, va_list va );
-int nfasprintf( char **str, const char *fmt, ... );
-int nfsnprintf( char *buf, int blen, const char *fmt, ... );
+int ATTR_PRINTFLIKE(2, 3) nfasprintf( char **str, const char *fmt, ... );
+int ATTR_PRINTFLIKE(3, 4) nfsnprintf( char *buf, int blen, const char *fmt, ... );
 void ATTR_NORETURN oob( void );
 
 char *expand_strdup( const char *s );

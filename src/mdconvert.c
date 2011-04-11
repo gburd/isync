@@ -37,8 +37,10 @@
 
 #if __GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ > 4)
 # define ATTR_NORETURN __attribute__((noreturn))
+# define ATTR_PRINTFLIKE(fmt,var) __attribute__((format(printf,fmt,var)))
 #else
 # define ATTR_NORETURN
+# define ATTR_PRINTFLIKE(fmt,var)
 #endif
 
 static void ATTR_NORETURN
@@ -48,7 +50,7 @@ oob( void )
 	abort();
 }
 
-static void
+static void ATTR_PRINTFLIKE(1, 2)
 sys_error( const char *msg, ... )
 {
 	va_list va;
@@ -61,7 +63,7 @@ sys_error( const char *msg, ... )
 	perror( buf );
 }
 
-static int
+static int ATTR_PRINTFLIKE(3, 4)
 nfsnprintf( char *buf, int blen, const char *fmt, ... )
 {
 	int ret;
