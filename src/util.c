@@ -35,6 +35,15 @@ int DFlags, Ontty;
 static int need_nl;
 
 void
+flushn( void )
+{
+	if (need_nl) {
+		putchar( '\n' );
+		need_nl = 0;
+	}
+}
+
+void
 debug( const char *msg, ... )
 {
 	va_list va;
@@ -96,10 +105,7 @@ warn( const char *msg, ... )
 	va_list va;
 
 	if (!(DFlags & VERYQUIET)) {
-		if (need_nl) {
-			putchar( '\n' );
-			need_nl = 0;
-		}
+		flushn();
 		va_start( va, msg );
 		vfprintf( stderr, msg, va );
 		va_end( va );
@@ -111,10 +117,7 @@ error( const char *msg, ... )
 {
 	va_list va;
 
-	if (need_nl) {
-		putchar( '\n' );
-		need_nl = 0;
-	}
+	flushn();
 	va_start( va, msg );
 	vfprintf( stderr, msg, va );
 	va_end( va );
@@ -126,10 +129,7 @@ sys_error( const char *msg, ... )
 	va_list va;
 	char buf[1024];
 
-	if (need_nl) {
-		putchar( '\n' );
-		need_nl = 0;
-	}
+	flushn();
 	va_start( va, msg );
 	if ((unsigned)vsnprintf( buf, sizeof(buf), msg, va ) >= sizeof(buf))
 		oob();

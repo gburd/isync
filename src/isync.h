@@ -400,6 +400,7 @@ void infon( const char *, ... );
 void warn( const char *, ... );
 void error( const char *, ... );
 void sys_error( const char *, ... );
+void flushn( void );
 
 char *next_arg( char ** );
 

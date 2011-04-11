@@ -1733,7 +1733,7 @@ sync_bail2( sync_vars_t *svars )
 	free( svars->nname );
 	free( svars->jname );
 	free( svars->dname );
-	error( "" );
+	flushn();
 	sync_deref( svars );
 }
 
