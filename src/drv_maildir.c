@@ -399,6 +399,15 @@ maildir_uidval_lock( maildir_store_t *ctx )
 	lseek( ctx->uvfd, 0, SEEK_SET );
 	if ((n = read( ctx->uvfd, buf, sizeof(buf) )) <= 0 ||
 	    (buf[n] = 0, sscanf( buf, "%d\n%d", &ctx->gen.uidvalidity, &ctx->nuid ) != 2)) {
+#if 1
+		/* In a generic driver, resetting the UID validity would be the right thing.
+		 * But this would mess up the sync state completely. So better bail out and
+		 * give the user a chance to fix the mailbox. */
+		if (n) {
+			error( "Maildir error: cannot read UIDVALIDITY.\n" );
+			return DRV_BOX_BAD;
+		}
+#endif
 		return maildir_init_uid_new( ctx );
 	} else
 		ctx->uvok = 1;
@@ -624,6 +633,12 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 			entry = &msglist->ents[i];
 			if (entry->uid != INT_MAX) {
 				if (uid == entry->uid) {
+#if 1
+					/* See comment in maildir_uidval_lock() why this is fatal. */
+					error( "Maildir error: duplicate UID %d.\n", uid );
+					maildir_free_scan( msglist );
+					return DRV_BOX_BAD;
+#else
 					info( "Maildir notice: duplicate UID; changing UIDVALIDITY.\n");
 					if ((ret = maildir_init_uid( ctx )) != DRV_OK) {
 						maildir_free_scan( msglist );
@@ -631,6 +646,7 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 					}
 					maildir_free_scan( msglist );
 					goto again;
+#endif
 				}
 				uid = entry->uid;
 				if ((ctx->gen.opts & OPEN_SIZE) || ((ctx->gen.opts & OPEN_FIND) && uid >= ctx->newuid))
