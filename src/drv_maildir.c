@@ -318,9 +318,6 @@ maildir_set_uid( maildir_store_t *ctx, const char *name, int *uid )
 	if ((ret = ctx->db->put( ctx->db, 0, &key, &value, 0 ))) {
 	  tbork:
 		ctx->db->err( ctx->db, ret, "Maildir error: db->put()" );
-	  bork:
-		ctx->db->close( ctx->db, 0 );
-		ctx->db = 0;
 		return DRV_BOX_BAD;
 	}
 	if (uid) {
@@ -332,7 +329,7 @@ maildir_set_uid( maildir_store_t *ctx, const char *name, int *uid )
 	}
 	if ((ret = ctx->db->sync( ctx->db, 0 ))) {
 		ctx->db->err( ctx->db, ret, "Maildir error: db->sync()" );
-		goto bork;
+		return DRV_BOX_BAD;
 	}
 	return DRV_OK;
 }
@@ -523,6 +520,7 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 			}
 			if ((tdb->open)( tdb, 0, 0, 0, DB_HASH, DB_CREATE, 0 )) {
 				fputs( "Maildir error: tdb->open() failed\n", stderr );
+			  bork:
 				tdb->close( tdb, 0 );
 				return DRV_BOX_BAD;
 			}
@@ -533,13 +531,6 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 			memcpy( buf + bl, subdirs[i], 4 );
 			if (!(d = opendir( buf ))) {
 				sys_error( "Maildir error: cannot list %s", buf );
-#ifdef USE_DB
-				if (!ctx->db)
-#endif /* USE_DB */
-					maildir_uidval_unlock( ctx );
-#ifdef USE_DB
-			  bork:
-#endif /* USE_DB */
 				maildir_free_scan( msglist );
 #ifdef USE_DB
 				if (ctx->db)
@@ -558,8 +549,8 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 					if ((ret = ctx->db->get( ctx->db, 0, &key, &value, 0 ))) {
 						if (ret != DB_NOTFOUND) {
 							ctx->db->err( ctx->db, ret, "Maildir error: db->get()" );
-							ctx->db->close( ctx->db, 0 );
-							ctx->db = 0;
+						  mbork:
+							maildir_free_scan( msglist );
 							goto bork;
 						}
 						uid = INT_MAX;
@@ -567,7 +558,7 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 						value.size = 0;
 						if ((ret = tdb->put( tdb, 0, &key, &value, 0 ))) {
 							tdb->err( tdb, ret, "Maildir error: tdb->put()" );
-							goto bork;
+							goto mbork;
 						}
 						uid = *(int *)value.data;
 					}
@@ -674,7 +665,6 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 					if (errno != ENOENT) {
 						sys_error( "Maildir error: cannot rename %s to %s", nbuf, buf );
 					  fail:
-						maildir_uidval_unlock( ctx );
 						maildir_free_scan( msglist );
 						return DRV_BOX_BAD;
 					}
@@ -808,31 +798,31 @@ maildir_select( store_t *gctx, int create,
 		lck.l_type = F_WRLCK;
 		if (fcntl( ctx->uvfd, F_SETLKW, &lck )) {
 			sys_error( "Maildir error: cannot lock %s", uvpath );
-		  bork:
-			close( ctx->uvfd );
-			ctx->uvfd = -1;
 			cb( DRV_BOX_BAD, aux );
 			return;
 		}
 		if (db_create( &ctx->db, 0, 0 )) {
 			fputs( "Maildir error: db_create() failed\n", stderr );
-			goto bork;
+			cb( DRV_BOX_BAD, aux );
+			return;
 		}
 		if ((ret = (ctx->db->open)( ctx->db, 0, uvpath, 0, DB_HASH, DB_CREATE, 0 ))) {
 			ctx->db->err( ctx->db, ret, "Maildir error: db->open(%s)", uvpath );
-		  dbork:
-			ctx->db->close( ctx->db, 0 );
-			goto bork;
+			cb( DRV_BOX_BAD, aux );
+			return;
 		}
 		key.data = (void *)"UIDVALIDITY";
 		key.size = 11;
 		if ((ret = ctx->db->get( ctx->db, 0, &key, &value, 0 ))) {
 			if (ret != DB_NOTFOUND) {
 				ctx->db->err( ctx->db, ret, "Maildir error: db->get()" );
-				goto dbork;
+				cb( DRV_BOX_BAD, aux );
+				return;
 			}
-			if (maildir_init_uid_new( ctx ) != DRV_OK)
-				goto dbork;
+			if (maildir_init_uid_new( ctx ) != DRV_OK) {
+				cb( DRV_BOX_BAD, aux );
+				return;
+			}
 		} else {
 			ctx->gen.uidvalidity = ((int *)value.data)[0];
 			ctx->nuid = ((int *)value.data)[1];
@@ -1164,8 +1154,6 @@ maildir_purge_msg( maildir_store_t *ctx, const char *name )
 	make_key( &key, (char *)name );
 	if ((ret = ctx->db->del( ctx->db, 0, &key, 0 ))) {
 		ctx->db->err( ctx->db, ret, "Maildir error: db->del()" );
-		ctx->db->close( ctx->db, 0 );
-		ctx->db = 0;
 		return DRV_BOX_BAD;
 	}
 	return DRV_OK;
