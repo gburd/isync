@@ -763,6 +763,7 @@ maildir_select( store_t *gctx, int create,
 
 	maildir_cleanup( gctx );
 	gctx->msgs = 0;
+	ctx->excs = 0;
 	ctx->uvfd = -1;
 #ifdef USE_DB
 	ctx->db = 0;
