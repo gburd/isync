@@ -1026,6 +1026,7 @@ maildir_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 		{
 			if ((ret = maildir_uidval_lock( ctx )) != DRV_OK ||
 			    (ret = maildir_obtain_uid( ctx, &uid )) != DRV_OK) {
+				free( data->data );
 				cb( ret, 0, aux );
 				return;
 			}
