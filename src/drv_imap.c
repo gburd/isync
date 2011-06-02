@@ -797,6 +797,10 @@ parse_list_rsp( imap_store_t *ctx, char *cmd )
 	if (memcmp( arg, ctx->gen.conf->path, l ))
 		return;
 	arg += l;
+	if (l && !strcmp( arg, "INBOX" )) {
+		warn( "IMAP warning: ignoring INBOX in %s\n", ctx->gen.conf->path );
+		return;
+	}
 	if (!memcmp( arg + strlen( arg ) - 5, ".lock", 5 )) /* workaround broken servers */
 		return;
 	add_string_list( &ctx->gen.boxes, arg );

@@ -180,7 +180,7 @@ maildir_list( store_t *gctx,
 	}
 	while ((de = readdir( dir ))) {
 		const char *inbox = ((maildir_store_conf_t *)gctx->conf)->inbox;
-		int bl;
+		int bl, isibx;
 		struct stat st;
 		char buf[PATH_MAX];
 
@@ -189,8 +189,12 @@ maildir_list( store_t *gctx,
 		bl = nfsnprintf( buf, sizeof(buf), "%s%s/cur", gctx->conf->path, de->d_name );
 		if (stat( buf, &st ) || !S_ISDIR(st.st_mode))
 			continue;
-		add_string_list( &gctx->boxes,
-		                 !memcmp( buf, inbox, bl - 4 ) && !inbox[bl - 4] ? "INBOX" : de->d_name );
+		isibx = !memcmp( buf, inbox, bl - 4 ) && !inbox[bl - 4];
+		if (!isibx && !strcmp( de->d_name, "INBOX" )) {
+			warn( "Maildir warning: ignoring INBOX in %s\n", gctx->conf->path );
+			continue;
+		}
+		add_string_list( &gctx->boxes, isibx ? "INBOX" : de->d_name );
 	}
 	closedir (dir);
 
