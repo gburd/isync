@@ -751,7 +751,7 @@ parse_response_code( imap_store_t *ctx, struct imap_cmd *cmd, char *s )
 			return RESP_CANCEL;
 		}
 	} else if (!strcmp( "UIDNEXT", arg )) {
-		if (!(arg = next_arg( &s )) || (ctx->gen.uidnext = strtol( arg, &p, 10 ), *p)) {
+		if (!(arg = next_arg( &s )) || !(ctx->gen.uidnext = atoi( arg ))) {
 			error( "IMAP error: malformed NEXTUID status\n" );
 			return RESP_CANCEL;
 		}
@@ -969,7 +969,7 @@ get_cmd_result_p2( imap_store_t *ctx, struct imap_cmd *cmd, int response )
 	if (response != RESP_OK) {
 		done_imap_cmd( ctx, ocmd, response );
 	} else {
-		ctx->gen.uidnext = 0;
+		ctx->gen.uidnext = 1;
 		if (ocmd->param.to_trash)
 			ctx->trashnc = TrashKnown;
 		ocmd->param.create = 0;
@@ -1436,7 +1436,7 @@ imap_select( store_t *gctx, int create,
 		prefix = ctx->prefix;
 	}
 
-	ctx->gen.uidnext = -1;
+	ctx->gen.uidnext = 0;
 
 	INIT_IMAP_CMD(imap_cmd_simple, cmd, cb, aux)
 	cmd->gen.param.create = create;
@@ -1480,7 +1480,7 @@ imap_load( store_t *gctx, int minuid, int maxuid, int newuid, int *excs, int nex
 				goto done;
 		}
 		if (maxuid == INT_MAX)
-			maxuid = ctx->gen.uidnext >= 0 ? ctx->gen.uidnext - 1 : 1000000000;
+			maxuid = ctx->gen.uidnext ? ctx->gen.uidnext - 1 : 1000000000;
 		if (maxuid >= minuid) {
 			if ((ctx->gen.opts & OPEN_FIND) && minuid < newuid) {
 				sprintf( buf, "%d:%d", minuid, newuid - 1 );
