@@ -2,8 +2,6 @@ have a look at libpathfinder.
 
 find out why mutt's message size calc is confused.
 
-iNboX is case insensitive!
-
 add some marker about message being already [remotely] trashed.
 real transactions would be certainly not particularly useful ...
 
