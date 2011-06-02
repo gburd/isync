@@ -391,7 +391,7 @@ void cram( const char *challenge, const char *user, const char *pass,
 #define VERYQUIET    16
 #define KEEPJOURNAL  32
 
-extern int DFlags, Ontty;
+extern int DFlags;
 
 void debug( const char *, ... );
 void debugn( const char *, ... );

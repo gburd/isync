@@ -228,7 +228,6 @@ main( int argc, char **argv )
 		fputs( "Fatal: $HOME not set\n", stderr );
 		return 1;
 	}
-	Ontty = isatty( 1 ) && isatty( 2 );
 	arc4_init();
 
 	memset( mvars, 0, sizeof(*mvars) );

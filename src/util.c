@@ -31,7 +31,7 @@
 #include <pwd.h>
 #include <ctype.h>
 
-int DFlags, Ontty;
+int DFlags;
 static int need_nl;
 
 void
@@ -67,7 +67,7 @@ debugn( const char *msg, ... )
 		vprintf( msg, va );
 		va_end( va );
 		fflush( stdout );
-		need_nl = Ontty;
+		need_nl = 1;
 	}
 }
 
@@ -95,7 +95,7 @@ infon( const char *msg, ... )
 		vprintf( msg, va );
 		va_end( va );
 		fflush( stdout );
-		need_nl = Ontty;
+		need_nl = 1;
 	}
 }
 
