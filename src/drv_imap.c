@@ -432,6 +432,23 @@ imap_refcounted_done( struct imap_cmd_refcounted_state *sts )
 	}
 }
 
+static void
+imap_refcounted_done_box( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int response )
+{
+	struct imap_cmd_refcounted_state *sts = ((struct imap_cmd_refcounted *)cmd)->state;
+
+	switch (response) {
+	case RESP_CANCEL:
+		sts->ret_val = DRV_CANCELED;
+		break;
+	case RESP_NO:
+		if (sts->ret_val == DRV_OK) /* Don't override cancelation. */
+			sts->ret_val = DRV_BOX_BAD;
+		break;
+	}
+	imap_refcounted_done( sts );
+}
+
 static int
 is_atom( list_t *list )
 {
@@ -1452,7 +1469,6 @@ imap_select( store_t *gctx, int create,
 /******************* imap_load *******************/
 
 static int imap_submit_load( imap_store_t *, const char *, int, struct imap_cmd_refcounted_state * );
-static void imap_load_p2( imap_store_t *, struct imap_cmd *, int );
 
 static void
 imap_load( store_t *gctx, int minuid, int maxuid, int newuid, int *excs, int nexcs,
@@ -1505,28 +1521,11 @@ imap_load( store_t *gctx, int minuid, int maxuid, int newuid, int *excs, int nex
 static int
 imap_submit_load( imap_store_t *ctx, const char *buf, int tuids, struct imap_cmd_refcounted_state *sts )
 {
-	return imap_exec( ctx, imap_refcounted_new_cmd( sts ), imap_load_p2,
+	return imap_exec( ctx, imap_refcounted_new_cmd( sts ), imap_refcounted_done_box,
 	                  "UID FETCH %s (UID%s%s%s)", buf,
 	                  (ctx->gen.opts & OPEN_FLAGS) ? " FLAGS" : "",
 	                  (ctx->gen.opts & OPEN_SIZE) ? " RFC822.SIZE" : "",
 	                  tuids ? " BODY.PEEK[HEADER.FIELDS (X-TUID)]" : "");
-}
-
-static void
-imap_load_p2( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int response )
-{
-	struct imap_cmd_refcounted_state *sts = ((struct imap_cmd_refcounted *)cmd)->state;
-
-	switch (response) {
-	case RESP_CANCEL:
-		sts->ret_val = DRV_CANCELED;
-		break;
-	case RESP_NO:
-		if (sts->ret_val == DRV_OK) /* Don't override cancelation. */
-			sts->ret_val = DRV_BOX_BAD;
-		break;
-	}
-	imap_refcounted_done( sts );
 }
 
 /******************* imap_fetch_msg *******************/
