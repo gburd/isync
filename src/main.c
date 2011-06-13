@@ -705,6 +705,7 @@ store_listed( int sts, void *aux )
 	mvars->state[t] = ST_OPEN;
 	switch (sts) {
 	case DRV_OK:
+		mvars->ctx[t]->listed = 1;
 		if (mvars->ctx[t]->conf->map_inbox)
 			add_string_list( &mvars->ctx[t]->boxes, mvars->ctx[t]->conf->map_inbox );
 		break;

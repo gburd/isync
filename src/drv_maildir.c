@@ -186,7 +186,6 @@ maildir_list( store_t *gctx,
 		                 !memcmp( buf, inbox, bl - 4 ) && !inbox[bl - 4] ? "INBOX" : de->d_name );
 	}
 	closedir (dir);
-	gctx->listed = 1;
 
 	cb( DRV_OK, aux );
 }
