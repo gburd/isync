@@ -1029,7 +1029,7 @@ maildir_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 			cb( DRV_BOX_BAD, 0, aux );
 			return;
 		}
-		if ((ret = maildir_validate( gctx->conf->path, gctx->conf->trash, gctx->opts & OPEN_CREATE, ctx )) != DRV_OK) {
+		if ((ret = maildir_validate( gctx->conf->path, gctx->conf->trash, 1, ctx )) != DRV_OK) {
 			free( data->data );
 			cb( ret, 0, aux );
 			return;
