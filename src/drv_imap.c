@@ -1542,28 +1542,21 @@ imap_open_store( store_conf_t *conf,
 }
 
 static void
-imap_prepare_paths( store_t *gctx )
-{
-	free_generic_messages( gctx->msgs );
-	gctx->msgs = 0;
-}
-
-static void
 imap_prepare_opts( store_t *gctx, int opts )
 {
 	gctx->opts = opts;
 }
 
 static void
-imap_select( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
+imap_select( store_t *gctx, int create,
              void (*cb)( int sts, void *aux ), void *aux )
 {
 	imap_store_t *ctx = (imap_store_t *)gctx;
 	struct imap_cmd *cmd = new_imap_cmd();
 	const char *prefix;
-	int ret, i, j, bl;
-	char buf[1000];
 
+	free_generic_messages( gctx->msgs );
+	gctx->msgs = 0;
 
 	if (!strcmp( gctx->name, "INBOX" )) {
 		prefix = "";
@@ -1573,10 +1566,18 @@ imap_select( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 
 	ctx->uidnext = -1;
 
-	cmd->param.create = (gctx->opts & OPEN_CREATE) != 0;
+	cmd->param.create = create;
 	cmd->param.trycreate = 1;
-	if ((ret = imap_exec_b( ctx, cmd, "SELECT \"%s%s\"", prefix, gctx->name )) != DRV_OK)
-		goto bail;
+	cb( imap_exec_b( ctx, cmd, "SELECT \"%s%s\"", prefix, gctx->name ), aux );
+}
+
+static void
+imap_load( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
+           void (*cb)( int sts, void *aux ), void *aux )
+{
+	imap_store_t *ctx = (imap_store_t *)gctx;
+	int ret, i, j, bl;
+	char buf[1000];
 
 	if (gctx->count) {
 		ctx->msgapp = &gctx->msgs;
@@ -1907,9 +1908,9 @@ struct driver imap_driver = {
 	imap_own_store,
 	imap_cancel_store,
 	imap_list,
-	imap_prepare_paths,
 	imap_prepare_opts,
 	imap_select,
+	imap_load,
 	imap_fetch_msg,
 	imap_store_msg,
 	imap_find_msg,

@@ -142,7 +142,6 @@ typedef struct message {
 #define OPEN_NEW        (1<<1)
 #define OPEN_FLAGS      (1<<2)
 #define OPEN_SIZE       (1<<3)
-#define OPEN_CREATE     (1<<4)
 #define OPEN_EXPUNGE    (1<<5)
 #define OPEN_SETFLAGS   (1<<6)
 #define OPEN_APPEND     (1<<7)
@@ -208,10 +207,11 @@ struct driver {
 	void (*cancel_store)( store_t *ctx );
 	void (*list)( store_t *ctx,
 	              void (*cb)( int sts, void *aux ), void *aux );
-	void (*prepare_paths)( store_t *ctx );
 	void (*prepare_opts)( store_t *ctx, int opts );
-	void (*select)( store_t *ctx, int minuid, int maxuid, int *excs, int nexcs,
-	                void (*cb)( int sts, void *aux ), void *aux );
+	void (*select)( store_t *ctx, int create,
+	               void (*cb)( int sts, void *aux ), void *aux );
+	void (*load)( store_t *ctx, int minuid, int maxuid, int *excs, int nexcs,
+	              void (*cb)( int sts, void *aux ), void *aux );
 	void (*fetch_msg)( store_t *ctx, message_t *msg, msg_data_t *data,
 	                   void (*cb)( int sts, void *aux ), void *aux );
 	void (*store_msg)( store_t *ctx, msg_data_t *data, int to_trash,

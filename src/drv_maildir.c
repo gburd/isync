@@ -745,9 +745,12 @@ maildir_app_msg( maildir_store_t *ctx, message_t ***msgapp, msg_t *entry )
 }
 
 static void
-maildir_prepare_paths( store_t *gctx )
+maildir_select( store_t *gctx, int create,
+                void (*cb)( int sts, void *aux ), void *aux )
 {
 	maildir_store_t *ctx = (maildir_store_t *)gctx;
+	int ret;
+	char uvpath[_POSIX_PATH_MAX];
 
 	maildir_cleanup( gctx );
 	gctx->msgs = 0;
@@ -759,37 +762,8 @@ maildir_prepare_paths( store_t *gctx )
 		gctx->path = nfstrdup( ((maildir_store_conf_t *)gctx->conf)->inbox );
 	else
 		nfasprintf( &gctx->path, "%s%s", gctx->conf->path, gctx->name );
-}
 
-static void
-maildir_prepare_opts( store_t *gctx, int opts )
-{
-	if (opts & OPEN_SETFLAGS)
-		opts |= OPEN_OLD;
-	if (opts & OPEN_EXPUNGE)
-		opts |= OPEN_OLD|OPEN_NEW|OPEN_FLAGS;
-	gctx->opts = opts;
-}
-
-static void
-maildir_select( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
-                void (*cb)( int sts, void *aux ), void *aux )
-{
-	maildir_store_t *ctx = (maildir_store_t *)gctx;
-	message_t **msgapp;
-	msglist_t msglist;
-	int i;
-#ifdef USE_DB
-	int ret;
-#endif /* USE_DB */
-	char uvpath[_POSIX_PATH_MAX];
-
-	ctx->minuid = minuid;
-	ctx->maxuid = maxuid;
-	ctx->excs = nfrealloc( excs, nexcs * sizeof(int) );
-	ctx->nexcs = nexcs;
-
-	if ((ret = maildir_validate( gctx->path, "", ctx->gen.opts & OPEN_CREATE, ctx )) != DRV_OK) {
+	if ((ret = maildir_validate( gctx->path, "", create, ctx )) != DRV_OK) {
 		cb( ret, aux );
 		return;
 	}
@@ -854,9 +828,43 @@ maildir_select( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 			ctx->nuid = ((int *)value.data)[1];
 			ctx->uvok = 1;
 		}
+		cb( DRV_OK, aux );
+		return;
 	}
   fnok:
 #endif /* USE_DB */
+	if ((ret = maildir_uidval_lock( ctx )) != DRV_OK) {
+		cb( ret, aux );
+		return;
+	}
+	maildir_uidval_unlock( ctx );
+
+	cb( DRV_OK, aux );
+}
+
+static void
+maildir_prepare_opts( store_t *gctx, int opts )
+{
+	if (opts & OPEN_SETFLAGS)
+		opts |= OPEN_OLD;
+	if (opts & OPEN_EXPUNGE)
+		opts |= OPEN_OLD|OPEN_NEW|OPEN_FLAGS;
+	gctx->opts = opts;
+}
+
+static void
+maildir_load( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
+              void (*cb)( int sts, void *aux ), void *aux )
+{
+	maildir_store_t *ctx = (maildir_store_t *)gctx;
+	message_t **msgapp;
+	msglist_t msglist;
+	int i;
+
+	ctx->minuid = minuid;
+	ctx->maxuid = maxuid;
+	ctx->excs = nfrealloc( excs, nexcs * sizeof(int) );
+	ctx->nexcs = nexcs;
 
 	if (maildir_scan( ctx, &msglist ) != DRV_OK) {
 		cb( DRV_BOX_BAD, aux );
@@ -1302,9 +1310,9 @@ struct driver maildir_driver = {
 	maildir_own_store,
 	maildir_disown_store, /* _cancel_, but it's the same */
 	maildir_list,
-	maildir_prepare_paths,
 	maildir_prepare_opts,
 	maildir_select,
+	maildir_load,
 	maildir_fetch_msg,
 	maildir_store_msg,
 	maildir_find_msg,

@@ -207,6 +207,7 @@ static int check_cancel( sync_vars_t *svars );
 #define ST_CLOSED          (1<<5)
 #define ST_SENT_CANCEL     (1<<6)
 #define ST_CANCELED        (1<<7)
+#define ST_SELECTED        (1<<8)
 
 #define ST_DID_EXPUNGE     (1<<16)
 
@@ -452,9 +453,13 @@ cancel_done( void *aux )
 
 	svars->state[t] |= ST_CANCELED;
 	if (svars->state[1-t] & ST_CANCELED) {
-		Fclose( svars->nfp );
-		Fclose( svars->jfp );
-		sync_bail( svars );
+		if (svars->lfd) {
+			Fclose( svars->nfp );
+			Fclose( svars->jfp );
+			sync_bail( svars );
+		} else {
+			sync_bail2( svars );
+		}
 	}
 }
 
@@ -537,21 +542,14 @@ clean_strdup( const char *s )
 
 #define JOURNAL_VERSION "2"
 
-static int select_box( sync_vars_t *svars, int t, int minwuid, int *mexcs, int nmexcs );
+static void box_selected( int sts, void *aux );
 
 void
 sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
             void (*cb)( int sts, void *aux ), void *aux )
 {
 	sync_vars_t *svars;
-	sync_rec_t *srec, *nsrec;
-	char *s, *cmname, *csname;
-	FILE *jfp;
-	int opts[2], line, t1, t2, t3, t;
-	struct stat st;
-	struct flock lck;
-	char fbuf[16]; /* enlarge when support for keywords is added */
-	char buf[64];
+	int t;
 
 	svars = nfcalloc( sizeof(*svars) );
 	svars->t[1] = 1;
@@ -571,15 +569,44 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 		ctx[t]->uidvalidity = -1;
 		set_bad_callback( ctx[t], store_bad, AUX );
 		svars->drv[t] = ctx[t]->conf->driver;
-		svars->drv[t]->prepare_paths( ctx[t] );
+		info( "Selecting %s %s...\n", str_ms[t], ctx[t]->name );
+		DRIVER_CALL(select( ctx[t], (chan->ops[t] & OP_CREATE) != 0, box_selected, AUX ));
 	}
+}
 
+static int load_box( sync_vars_t *svars, int t, int minwuid, int *mexcs, int nmexcs );
+
+static void
+box_selected( int sts, void *aux )
+{
+	DECL_SVARS;
+	sync_rec_t *srec, *nsrec;
+	char *s, *cmname, *csname;
+	store_t *ctx[2];
+	channel_conf_t *chan;
+	FILE *jfp;
+	int opts[2], line, t1, t2, t3;
+	struct stat st;
+	struct flock lck;
+	char fbuf[16]; /* enlarge when support for keywords is added */
+	char buf[64];
+
+	if (check_ret( sts, aux ))
+		return;
+	INIT_SVARS(aux);
+	ctx[0] = svars->ctx[0];
+	ctx[1] = svars->ctx[1];
+	svars->state[t] |= ST_SELECTED;
+	if (!(svars->state[1-t] & ST_SELECTED))
+		return;
+
+	chan = svars->chan;
 	if (!strcmp( chan->sync_state ? chan->sync_state : global_sync_state, "*" )) {
 		if (!ctx[S]->path) {
 			error( "Error: store '%s' does not support in-box sync state\n", chan->stores[S]->name );
 		  sbail:
-			free( svars );
-			cb( SYNC_BAD(S), aux );
+			svars->ret = SYNC_BAD(S);
+			sync_bail2( svars );
 			return;
 		}
 		nfasprintf( &svars->dname, "%s/." EXE "state", ctx[S]->path );
@@ -597,13 +624,11 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 	}
 	if (!(s = strrchr( svars->dname, '/' ))) {
 		error( "Error: invalid SyncState '%s'\n", svars->dname );
-		free( svars->dname );
 		goto sbail;
 	}
 	*s = 0;
 	if (mkdir( svars->dname, 0700 ) && errno != EEXIST) {
 		error( "Error: cannot create SyncState directory '%s': %s\n", svars->dname, strerror(errno) );
-		free( svars->dname );
 		goto sbail;
 	}
 	*s = '/';
@@ -810,6 +835,17 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 			goto bail;
 		}
 	}
+
+	t1 = 0;
+	for (t = 0; t < 2; t++)
+		if (svars->uidval[t] >= 0 && svars->uidval[t] != ctx[t]->uidvalidity) {
+			error( "Error: UIDVALIDITY of %s changed (got %d, expected %d)\n",
+			       str_ms[t], ctx[t]->uidvalidity, svars->uidval[t] );
+			t1++;
+		}
+	if (t1)
+		goto bail;
+
 	if (!(svars->nfp = fopen( svars->nname, "w" ))) {
 		error( "Error: cannot write new sync state %s\n", svars->nname );
 		goto bail;
@@ -851,8 +887,6 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 			} else if (chan->stores[1-t]->trash && chan->stores[1-t]->trash_remote_new)
 				opts[t] |= OPEN_NEW|OPEN_FLAGS;
 		}
-		if (chan->ops[t] & OP_CREATE)
-			opts[t] |= OPEN_CREATE;
 	}
 	if ((chan->ops[S] & (OP_NEW|OP_RENEW)) && chan->max_messages)
 		opts[S] |= OPEN_OLD|OPEN_NEW|OPEN_FLAGS;
@@ -873,15 +907,15 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 	svars->drv[S]->prepare_opts( ctx[S], opts[S] );
 
 	svars->find = line != 0;
-	if (!svars->smaxxuid && select_box( svars, M, (ctx[M]->opts & OPEN_OLD) ? 1 : INT_MAX, 0, 0 ))
+	if (!svars->smaxxuid && load_box( svars, M, (ctx[M]->opts & OPEN_OLD) ? 1 : INT_MAX, 0, 0 ))
 		return;
-	select_box( svars, S, (ctx[S]->opts & OPEN_OLD) ? 1 : INT_MAX, 0, 0 );
+	load_box( svars, S, (ctx[S]->opts & OPEN_OLD) ? 1 : INT_MAX, 0, 0 );
 }
 
-static void box_selected( int sts, void *aux );
+static void box_loaded( int sts, void *aux );
 
 static int
-select_box( sync_vars_t *svars, int t, int minwuid, int *mexcs, int nmexcs )
+load_box( sync_vars_t *svars, int t, int minwuid, int *mexcs, int nmexcs )
 {
 	sync_rec_t *srec;
 	int maxwuid;
@@ -897,9 +931,9 @@ select_box( sync_vars_t *svars, int t, int minwuid, int *mexcs, int nmexcs )
 				maxwuid = srec->uid[t];
 	} else
 		maxwuid = 0;
-	info( "Selecting %s %s...\n", str_ms[t], svars->ctx[t]->name );
-	debug( maxwuid == INT_MAX ? "selecting %s [%d,inf]\n" : "selecting %s [%d,%d]\n", str_ms[t], minwuid, maxwuid );
-	DRIVER_CALL_RET(select( svars->ctx[t], minwuid, maxwuid, mexcs, nmexcs, box_selected, AUX ));
+	info( "Loading %s...\n", str_ms[t] );
+	debug( maxwuid == INT_MAX ? "loading %s [%d,inf]\n" : "loading %s [%d,%d]\n", str_ms[t], minwuid, maxwuid );
+	DRIVER_CALL_RET(load( svars->ctx[t], minwuid, maxwuid, mexcs, nmexcs, box_loaded, AUX ));
 }
 
 typedef struct {
@@ -911,19 +945,12 @@ static void msg_found_sel( int sts, int uid, void *aux );
 static void msgs_found_sel( sync_vars_t *svars, int t );
 
 static void
-box_selected( int sts, void *aux )
+box_loaded( int sts, void *aux )
 {
 	find_vars_t *fv;
 	sync_rec_t *srec;
 
 	SVARS_CHECK_RET;
-	if (svars->uidval[t] >= 0 && svars->uidval[t] != svars->ctx[t]->uidvalidity) {
-		error( "Error: UIDVALIDITY of %s changed (got %d, expected %d)\n",
-		         str_ms[t], svars->ctx[t]->uidvalidity, svars->uidval[t] );
-		svars->ret |= SYNC_FAIL;
-		cancel_sync( svars );
-		return;
-	}
 	info( "%s: %d messages, %d recent\n", str_ms[t], svars->ctx[t]->count, svars->ctx[t]->recent );
 
 	if (svars->find) {
@@ -1100,7 +1127,7 @@ msgs_found_sel( sync_vars_t *svars, int t )
 		for (t = 0; t < nmexcs; t++)
 			debugn( " %d", mexcs[t] );
 		debug( "\n" );
-		select_box( svars, M, minwuid, mexcs, nmexcs );
+		load_box( svars, M, minwuid, mexcs, nmexcs );
 		return;
 	}
 
