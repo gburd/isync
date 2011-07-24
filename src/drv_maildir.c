@@ -231,7 +231,7 @@ maildir_validate( const char *prefix, const char *box, int create, maildir_store
 	DIR *dirp;
 	struct dirent *entry;
 	time_t now;
-	int i, j, bl;
+	int i, bl;
 	struct stat st;
 	char buf[_POSIX_PATH_MAX];
 
@@ -245,7 +245,6 @@ maildir_validate( const char *prefix, const char *box, int create, maildir_store
 					maildir_invoke_bad_callback( &ctx->gen );
 					return DRV_CANCELED;
 				}
-			  mkdirs:
 				for (i = 0; i < 3; i++) {
 					memcpy( buf + bl, subdirs[i], 4 );
 					if (mkdir( buf, 0700 )) {
@@ -264,16 +263,12 @@ maildir_validate( const char *prefix, const char *box, int create, maildir_store
 			return DRV_BOX_BAD;
 		}
 	} else {
-		for (i = j = 0; i < 3; i++) {
+		for (i = 0; i < 3; i++) {
 			memcpy( buf + bl, subdirs[i], 4 );
-			if (!stat( buf, &st ) && S_ISDIR(st.st_mode))
-				j++;
-		}
-		if (!j)
-			goto mkdirs;
-		if (j != 3) {
-			error( "Maildir error: '%.*s' is no valid mailbox\n", bl, buf );
-			return DRV_BOX_BAD;
+			if (stat( buf, &st ) || !S_ISDIR(st.st_mode)) {
+				error( "Maildir error: '%.*s' is no valid mailbox\n", bl, buf );
+				return DRV_BOX_BAD;
+			}
 		}
 		memcpy( buf + bl, "tmp/", 5 );
 		bl += 4;
