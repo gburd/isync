@@ -621,17 +621,17 @@ box_selected( int sts, void *aux )
 			free( cmname );
 		}
 		free( csname );
+		if (!(s = strrchr( svars->dname, '/' ))) {
+			error( "Error: invalid SyncState '%s'\n", svars->dname );
+			goto sbail;
+		}
+		*s = 0;
+		if (mkdir( svars->dname, 0700 ) && errno != EEXIST) {
+			error( "Error: cannot create SyncState directory '%s': %s\n", svars->dname, strerror(errno) );
+			goto sbail;
+		}
+		*s = '/';
 	}
-	if (!(s = strrchr( svars->dname, '/' ))) {
-		error( "Error: invalid SyncState '%s'\n", svars->dname );
-		goto sbail;
-	}
-	*s = 0;
-	if (mkdir( svars->dname, 0700 ) && errno != EEXIST) {
-		error( "Error: cannot create SyncState directory '%s': %s\n", svars->dname, strerror(errno) );
-		goto sbail;
-	}
-	*s = '/';
 	nfasprintf( &svars->jname, "%s.journal", svars->dname );
 	nfasprintf( &svars->nname, "%s.new", svars->dname );
 	nfasprintf( &svars->lname, "%s.lock", svars->dname );
