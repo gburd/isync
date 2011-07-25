@@ -803,6 +803,9 @@ maildir_select( store_t *gctx, int create,
 {
 	maildir_store_t *ctx = (maildir_store_t *)gctx;
 	int ret;
+#ifdef USE_DB
+	struct stat st;
+#endif /* USE_DB */
 	char uvpath[_POSIX_PATH_MAX];
 
 	maildir_cleanup( gctx );
@@ -855,12 +858,18 @@ maildir_select( store_t *gctx, int create,
 			cb( DRV_BOX_BAD, aux );
 			return;
 		}
+		if (fstat( ctx->uvfd, &st )) {
+			sys_error( "Maildir error: cannot stat %s", uvpath );
+			cb( DRV_BOX_BAD, aux );
+			return;
+		}
 		if (db_create( &ctx->db, 0, 0 )) {
 			fputs( "Maildir error: db_create() failed\n", stderr );
 			cb( DRV_BOX_BAD, aux );
 			return;
 		}
-		if ((ret = (ctx->db->open)( ctx->db, 0, uvpath, 0, DB_HASH, DB_CREATE, 0 ))) {
+		if ((ret = (ctx->db->open)( ctx->db, 0, uvpath, 0, DB_HASH,
+		                            st.st_size ? 0 : DB_CREATE | DB_TRUNCATE, 0 ))) {
 			ctx->db->err( ctx->db, ret, "Maildir error: db->open(%s)", uvpath );
 			cb( DRV_BOX_BAD, aux );
 			return;

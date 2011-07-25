@@ -122,7 +122,7 @@ convert( const char *box, int altmap )
 		fputs( "Error: db_create() failed\n", stderr );
 		goto tbork;
 	}
-	if ((ret = (db->open)( db, 0, dbpath, 0, DB_HASH, DB_CREATE, 0 ))) {
+	if ((ret = (db->open)( db, 0, dbpath, 0, DB_HASH, altmap ? DB_CREATE|DB_TRUNCATE : 0, 0 ))) {
 		db->err( db, ret, "Error: db->open(%s)", dbpath );
 	  dbork:
 		db->close( db, 0 );
