@@ -156,9 +156,15 @@ typedef struct {
 } sync_vars_t;
 
 #define AUX &svars->t[t]
-#define SVARS(aux) \
+#define DECL_SVARS \
+	int t; \
+	sync_vars_t *svars
+#define INIT_SVARS(aux) \
+	t = *(int *)aux; \
+	svars = (sync_vars_t *)(((char *)(&((int *)aux)[-t])) - offsetof(sync_vars_t, t))
+#define DECL_INIT_SVARS(aux) \
 	int t = *(int *)aux; \
-	sync_vars_t *svars = (sync_vars_t *)(((char *)(&((int *)aux)[-t])) - offsetof(sync_vars_t, t));
+	sync_vars_t *svars = (sync_vars_t *)(((char *)(&((int *)aux)[-t])) - offsetof(sync_vars_t, t))
 
 /* operation dependencies:
    select(S): -
@@ -197,7 +203,7 @@ static int msg_fetched( int sts, void *aux );
 static int
 copy_msg( copy_vars_t *vars )
 {
-	SVARS(vars->aux)
+	DECL_INIT_SVARS(vars->aux);
 
 	vars->data.flags = vars->msg->flags;
 	return svars->drv[1-t]->fetch_msg( svars->ctx[1-t], vars->msg, &vars->data, msg_fetched, vars );
@@ -209,7 +215,7 @@ static int
 msg_fetched( int sts, void *aux )
 {
 	copy_vars_t *vars = (copy_vars_t *)aux;
-	SVARS(vars->aux)
+	DECL_SVARS;
 	char *fmap, *buf;
 	int i, len, extra, scr, tcr, lcrs, hcrs, bcrs, lines;
 	int start, sbreak = 0, ebreak = 0;
@@ -217,6 +223,8 @@ msg_fetched( int sts, void *aux )
 
 	switch (sts) {
 	case DRV_OK:
+		INIT_SVARS(vars->aux);
+
 		vars->msg->flags = vars->data.flags;
 
 		scr = (svars->drv[1-t]->flags / DRV_CRLF) & 1;
@@ -324,6 +332,8 @@ msg_fetched( int sts, void *aux )
 	case DRV_MSG_BAD:
 		return vars->cb( SYNC_NOGOOD, 0, vars );
 	case DRV_STORE_BAD:
+		INIT_SVARS(vars->aux);
+		(void)svars;
 		return vars->cb( SYNC_BAD(1-t), 0, vars );
 	default:
 		return vars->cb( SYNC_FAIL, 0, vars );
@@ -334,19 +344,22 @@ static int
 msg_stored( int sts, int uid, void *aux )
 {
 	copy_vars_t *vars = (copy_vars_t *)aux;
-	SVARS(vars->aux)
+	DECL_SVARS;
 
-	(void)svars;
 	switch (sts) {
 	case DRV_OK:
 		return vars->cb( SYNC_OK, uid, vars );
 	case DRV_CANCELED:
 		return vars->cb( SYNC_CANCELED, 0, vars );
 	case DRV_MSG_BAD:
+		INIT_SVARS(vars->aux);
+		(void)svars;
 		warn( "Warning: %s refuses to store message %d from %s.\n",
 		      str_ms[t], vars->msg->uid, str_ms[1-t] );
 		return vars->cb( SYNC_NOGOOD, 0, vars );
 	case DRV_STORE_BAD:
+		INIT_SVARS(vars->aux);
+		(void)svars;
 		return vars->cb( SYNC_BAD(t), 0, vars );
 	default:
 		return vars->cb( SYNC_FAIL, 0, vars );
@@ -401,7 +414,7 @@ cancel_sync( sync_vars_t *svars )
 static void
 cancel_done( int sts, void *aux )
 {
-	SVARS(aux)
+	DECL_INIT_SVARS(aux);
 
 	if (sts != DRV_OK) {
 		svars->ret |= SYNC_BAD(t);
@@ -417,16 +430,20 @@ cancel_done( int sts, void *aux )
 
 
 static int
-check_ret( int sts, sync_vars_t *svars, int t )
+check_ret( int sts, void *aux )
 {
+	DECL_SVARS;
+
 	switch (sts) {
 	case DRV_CANCELED:
 		return 1;
 	case DRV_STORE_BAD:
+		INIT_SVARS(aux);
 		svars->ret |= SYNC_BAD(t);
 		cancel_sync( svars );
 		return 1;
 	case DRV_BOX_BAD:
+		INIT_SVARS(aux);
 		svars->ret |= SYNC_FAIL;
 		cancel_sync( svars );
 		return 1;
@@ -434,15 +451,28 @@ check_ret( int sts, sync_vars_t *svars, int t )
 	return 0;
 }
 
-static int
-check_ret_aux( int sts, sync_vars_t *svars, int t, void *aux )
-{
-	if (!check_ret( sts, svars, t ))
-		return 0;
-	free( aux );
-	return 1;
-}
+#define SVARS_CHECK_RET \
+	DECL_SVARS; \
+	if (check_ret( sts, aux )) \
+		return 1; \
+	INIT_SVARS(aux)
 
+#define SVARS_CHECK_RET_VARS(type) \
+	type *vars = (type *)aux; \
+	DECL_SVARS; \
+	if (check_ret( sts, vars->aux )) { \
+		free( vars ); \
+		return 1; \
+	} \
+	INIT_SVARS(vars->aux)
+
+#define SVARS_CHECK_CANCEL_RET \
+	DECL_SVARS; \
+	if (sts == SYNC_CANCELED) { \
+		free( vars ); \
+		return 1; \
+	} \
+	INIT_SVARS(vars->aux)
 
 static char *
 clean_strdup( const char *s )
@@ -834,12 +864,10 @@ static int msgs_found_sel( sync_vars_t *svars, int t );
 static int
 box_selected( int sts, void *aux )
 {
-	SVARS(aux)
 	find_vars_t *fv;
 	sync_rec_t *srec;
 
-	if (check_ret( sts, svars, t ))
-		return 1;
+	SVARS_CHECK_RET;
 	if (svars->uidval[t] >= 0 && svars->uidval[t] != svars->ctx[t]->uidvalidity) {
 		error( "Error: UIDVALIDITY of %s changed (got %d, expected %d)\n",
 		         str_ms[t], svars->ctx[t]->uidvalidity, svars->uidval[t] );
@@ -880,11 +908,7 @@ box_selected( int sts, void *aux )
 static int
 msg_found_sel( int sts, int uid, void *aux )
 {
-	find_vars_t *vars = (find_vars_t *)aux;
-	SVARS(vars->aux)
-
-	if (check_ret_aux( sts, svars, t, vars ))
-		return 1;
+	SVARS_CHECK_RET_VARS(find_vars_t);
 	switch (sts) {
 	case DRV_OK:
 		debug( "  -> new UID %d\n", uid );
@@ -1268,8 +1292,7 @@ msgs_found_sel( sync_vars_t *svars, int t )
 static int
 msg_copied( int sts, int uid, copy_vars_t *vars )
 {
-	SVARS(vars->aux)
-
+	SVARS_CHECK_CANCEL_RET;
 	switch (sts) {
 	case SYNC_OK:
 		msg_copied_p2( svars, vars->srec, t, vars->msg, uid );
@@ -1281,7 +1304,6 @@ msg_copied( int sts, int uid, copy_vars_t *vars )
 		break;
 	default:
 		cancel_sync( svars );
-	case SYNC_CANCELED:
 		free( vars );
 		return 1;
 	}
@@ -1343,11 +1365,7 @@ msgs_copied( sync_vars_t *svars, int t )
 static int
 msg_found_new( int sts, int uid, void *aux )
 {
-	find_vars_t *vars = (find_vars_t *)aux;
-	SVARS(vars->aux)
-
-	if (check_ret_aux( sts, svars, t, vars ))
-		return 1;
+	SVARS_CHECK_RET_VARS(find_vars_t);
 	switch (sts) {
 	case DRV_OK:
 		debug( "  -> new UID %d\n", uid );
@@ -1369,11 +1387,7 @@ msg_found_new( int sts, int uid, void *aux )
 static int
 flags_set_del( int sts, void *aux )
 {
-	flag_vars_t *vars = (flag_vars_t *)aux;
-	SVARS(vars->aux)
-
-	if (check_ret_aux( sts, svars, t, vars ))
-		return 1;
+	SVARS_CHECK_RET_VARS(flag_vars_t);
 	switch (sts) {
 	case DRV_OK:
 		vars->srec->status |= S_DEL(t);
@@ -1390,11 +1404,7 @@ flags_set_del( int sts, void *aux )
 static int
 flags_set_sync( int sts, void *aux )
 {
-	flag_vars_t *vars = (flag_vars_t *)aux;
-	SVARS(vars->aux)
-
-	if (check_ret_aux( sts, svars, t, vars ))
-		return 1;
+	SVARS_CHECK_RET_VARS(flag_vars_t);
 	switch (sts) {
 	case DRV_OK:
 		if (vars->aflags & F_DELETED)
@@ -1490,12 +1500,13 @@ msgs_flags_set( sync_vars_t *svars, int t )
 static int
 msg_trashed( int sts, void *aux )
 {
-	SVARS(aux)
+	DECL_SVARS;
 
 	if (sts == DRV_MSG_BAD)
 		sts = DRV_BOX_BAD;
-	if (check_ret( sts, svars, t ))
+	if (check_ret( sts, aux ))
 		return 1;
+	INIT_SVARS(aux);
 	svars->trash_done[t]++;
 	stats( svars );
 	return sync_close( svars, t );
@@ -1504,8 +1515,7 @@ msg_trashed( int sts, void *aux )
 static int
 msg_rtrashed( int sts, int uid, copy_vars_t *vars )
 {
-	SVARS(vars->aux)
-
+	SVARS_CHECK_CANCEL_RET;
 	(void)uid;
 	switch (sts) {
 	case SYNC_OK:
@@ -1513,7 +1523,6 @@ msg_rtrashed( int sts, int uid, copy_vars_t *vars )
 		break;
 	default:
 		cancel_sync( svars );
-	case SYNC_CANCELED:
 		free( vars );
 		return 1;
 	}
@@ -1545,10 +1554,7 @@ sync_close( sync_vars_t *svars, int t )
 static int
 box_closed( int sts, void *aux )
 {
-	SVARS(aux)
-
-	if (check_ret( sts, svars, t ))
-		return 1;
+	SVARS_CHECK_RET;
 	svars->state[t] |= ST_DID_EXPUNGE;
 	box_closed_p2( svars, t );
 	return 0;
