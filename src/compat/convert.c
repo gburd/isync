@@ -73,7 +73,7 @@ convert( config_t *box )
 	FILE *fp;
 	msg_t *msgs;
 	DB *db;
-	int i, ret, fd, uidval, maxuid, bl, uid, rmsgs, nmsgs, uv[2];
+	int i, ret, fd, uidval, maxuid, uid, rmsgs, nmsgs, uv[2];
 	unsigned u;
 	struct stat sb;
 	char buf[_POSIX_PATH_MAX], diumname[_POSIX_PATH_MAX],
@@ -160,7 +160,7 @@ convert( config_t *box )
 	rmsgs = 0;
 	nmsgs = 0;
 	for (i = 0; i < 2; i++) {
-		bl = nfsnprintf( buf, sizeof(buf), "%s/%s/", mboxdir, subdirs[i] );
+		nfsnprintf( buf, sizeof(buf), "%s/%s/", mboxdir, subdirs[i] );
 		if (!(d = opendir( buf ))) {
 			perror( "opendir" );
 		  err4:

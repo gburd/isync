@@ -324,7 +324,7 @@ static int
 init_ssl_ctx( imap_store_t *ctx )
 {
 	imap_server_conf_t *srvc = ((imap_store_conf_t *)ctx->gen.conf)->server;
-	SSL_METHOD *method;
+	const SSL_METHOD *method;
 	int options = 0;
 
 	if (srvc->use_tlsv1 && !srvc->use_sslv2 && !srvc->use_sslv3)

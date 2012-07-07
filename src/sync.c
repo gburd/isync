@@ -963,7 +963,7 @@ msgs_found_sel( sync_vars_t *svars, int t )
 	copy_vars_t *cv;
 	flag_vars_t *fv;
 	const char *diag;
-	int uid, minwuid, *mexcs, nmexcs, rmexcs, no[2], del[2], todel, nmsgs, t1, t2;
+	int uid, minwuid, *mexcs, nmexcs, rmexcs, no[2], del[2], todel, t1, t2;
 	int sflags, nflags, aflags, dflags, nex;
 	char fbuf[16]; /* enlarge when support for keywords is added */
 
@@ -981,7 +981,7 @@ msgs_found_sel( sync_vars_t *svars, int t )
 		uid = tmsg->uid;
 		if (DFlags & DEBUG) {
 			make_flags( tmsg->flags, fbuf );
-			printf( svars->ctx[t]->opts & OPEN_SIZE ? "  message %5d, %-4s, %6d: " : "  message %5d, %-4s: ", uid, fbuf, tmsg->size );
+			printf( svars->ctx[t]->opts & OPEN_SIZE ? "  message %5d, %-4s, %6lu: " : "  message %5d, %-4s: ", uid, fbuf, tmsg->size );
 		}
 		for (srec = nsrec; srec; srec = srec->next) {
 			if (srec->status & S_DEAD)
@@ -1081,7 +1081,7 @@ msgs_found_sel( sync_vars_t *svars, int t )
 	debug( "synchronizing new entries\n" );
 	svars->osrecadd = svars->srecadd;
 	for (t = 0; t < 2; t++) {
-		for (nmsgs = 0, tmsg = svars->ctx[1-t]->msgs; tmsg; tmsg = tmsg->next)
+		for (tmsg = svars->ctx[1-t]->msgs; tmsg; tmsg = tmsg->next)
 			if (tmsg->srec ? tmsg->srec->uid[t] < 0 && (tmsg->srec->uid[t] == -1 ? (svars->chan->ops[t] & OP_RENEW) : (svars->chan->ops[t] & OP_NEW)) : (svars->chan->ops[t] & OP_NEW)) {
 				debug( "new message %d on %s\n", tmsg->uid, str_ms[1-t] );
 				if ((svars->chan->ops[t] & OP_EXPUNGE) && (tmsg->flags & F_DELETED))
