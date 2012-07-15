@@ -172,12 +172,13 @@ static const char *cap_list[] = {
 #endif
 };
 
-#define RESP_OK    0
-#define RESP_NO    1
-#define RESP_BAD   2
+#define RESP_OK       0
+#define RESP_NO       1
+#define RESP_CANCEL   2
 
 static int get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd );
 
+static void imap_invoke_bad_callback( imap_store_t *ctx );
 
 static const char *Flags[] = {
 	"Draft",
@@ -503,8 +504,8 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 	char buf[1024];
 
 	while (ctx->literal_pending)
-		if (get_cmd_result( ctx, 0 ) == RESP_BAD)
-			goto bail;
+		if (get_cmd_result( ctx, 0 ) == RESP_CANCEL)
+			goto bail2;
 
 	if (!cmd)
 		cmd = new_imap_cmd();
@@ -549,6 +550,8 @@ v_submit_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd,
 	return cmd;
 
   bail:
+	imap_invoke_bad_callback( ctx );
+  bail2:
 	free( cmd->param.data );
 	free( cmd->cmd );
 	free( cmd );
@@ -576,7 +579,7 @@ imap_exec( imap_store_t *ctx, struct imap_cmd *cmdp, const char *fmt, ... )
 	cmdp = v_submit_imap_cmd( ctx, cmdp, fmt, ap );
 	va_end( ap );
 	if (!cmdp)
-		return RESP_BAD;
+		return RESP_CANCEL;
 
 	return get_cmd_result( ctx, cmdp );
 }
@@ -590,10 +593,10 @@ imap_exec_b( imap_store_t *ctx, struct imap_cmd *cmdp, const char *fmt, ... )
 	cmdp = v_submit_imap_cmd( ctx, cmdp, fmt, ap );
 	va_end( ap );
 	if (!cmdp)
-		return DRV_STORE_BAD;
+		return DRV_CANCELED;
 
 	switch (get_cmd_result( ctx, cmdp )) {
-	case RESP_BAD: return DRV_STORE_BAD;
+	case RESP_CANCEL: return DRV_CANCELED;
 	case RESP_NO: return DRV_BOX_BAD;
 	default: return DRV_OK;
 	}
@@ -608,10 +611,10 @@ imap_exec_m( imap_store_t *ctx, struct imap_cmd *cmdp, const char *fmt, ... )
 	cmdp = v_submit_imap_cmd( ctx, cmdp, fmt, ap );
 	va_end( ap );
 	if (!cmdp)
-		return DRV_STORE_BAD;
+		return DRV_CANCELED;
 
 	switch (get_cmd_result( ctx, cmdp )) {
-	case RESP_BAD: return DRV_STORE_BAD;
+	case RESP_CANCEL: return DRV_CANCELED;
 	case RESP_NO: return DRV_MSG_BAD;
 	default: return DRV_OK;
 	}
@@ -631,8 +634,8 @@ process_imap_replies( imap_store_t *ctx )
 {
 	while (ctx->num_in_progress > max_in_progress ||
 	       socket_pending( &ctx->buf.sock ))
-		if (get_cmd_result( ctx, 0 ) == RESP_BAD)
-			return RESP_BAD;
+		if (get_cmd_result( ctx, 0 ) == RESP_CANCEL)
+			return RESP_CANCEL;
 	return RESP_OK;
 }
 
@@ -905,7 +908,7 @@ parse_response_code( imap_store_t *ctx, struct imap_cmd *cmd, char *s )
 	s++;
 	if (!(p = strchr( s, ']' ))) {
 		error( "IMAP error: malformed response code\n" );
-		return RESP_BAD;
+		return RESP_CANCEL;
 	}
 	*p++ = 0;
 	arg = next_arg( &s );
@@ -914,12 +917,12 @@ parse_response_code( imap_store_t *ctx, struct imap_cmd *cmd, char *s )
 		    (ctx->gen.uidvalidity = strtoll( arg, &earg, 10 ), *earg))
 		{
 			error( "IMAP error: malformed UIDVALIDITY status\n" );
-			return RESP_BAD;
+			return RESP_CANCEL;
 		}
 	} else if (!strcmp( "UIDNEXT", arg )) {
 		if (!(arg = next_arg( &s )) || (ctx->uidnext = strtol( arg, &p, 10 ), *p)) {
 			error( "IMAP error: malformed NEXTUID status\n" );
-			return RESP_BAD;
+			return RESP_CANCEL;
 		}
 	} else if (!strcmp( "CAPABILITY", arg )) {
 		parse_capability( ctx, s );
@@ -935,7 +938,7 @@ parse_response_code( imap_store_t *ctx, struct imap_cmd *cmd, char *s )
 		    !(arg = next_arg( &s )) || !(*(int *)cmd->param.aux = atoi( arg )))
 		{
 			error( "IMAP error: malformed APPENDUID status\n" );
-			return RESP_BAD;
+			return RESP_CANCEL;
 		}
 	}
 	return RESP_OK;
@@ -1005,14 +1008,14 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 
 	for (;;) {
 		if (buffer_gets( &ctx->buf, &cmd ))
-			return RESP_BAD;
+			break;
 
 		arg = next_arg( &cmd );
 		if (*arg == '*') {
 			arg = next_arg( &cmd );
 			if (!arg) {
 				error( "IMAP error: unable to parse untagged response\n" );
-				return RESP_BAD;
+				break;
 			}
 
 			if (!strcmp( "NAMESPACE", arg )) {
@@ -1035,15 +1038,15 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 					ctx->gen.recent = atoi( arg );
 				else if(!strcmp ( "FETCH", arg1 )) {
 					if (parse_fetch( ctx, cmd ))
-						return RESP_BAD;
+						break; /* stream is likely to be useless now */
 				}
 			} else {
-				error( "IMAP error: unable to parse untagged response\n" );
-				return RESP_BAD;
+				error( "IMAP error: unrecognized untagged response '%s'\n", arg );
+				break; /* this may mean anything, so prefer not to spam the log */
 			}
 		} else if (!ctx->in_progress) {
 			error( "IMAP error: unexpected reply: %s %s\n", arg, cmd ? cmd : "" );
-			return RESP_BAD;
+			break; /* this may mean anything, so prefer not to spam the log */
 		} else if (*arg == '+') {
 			/* This can happen only with the last command underway, as
 			   it enforces a round-trip. */
@@ -1055,16 +1058,16 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				free( cmdp->param.data );
 				cmdp->param.data = 0;
 				if (n != (int)cmdp->param.data_len)
-					return RESP_BAD;
+					break;
 			} else if (cmdp->param.cont) {
 				if (cmdp->param.cont( ctx, cmdp, cmd ))
-					return RESP_BAD;
+					break;
 			} else {
 				error( "IMAP error: unexpected command continuation request\n" );
-				return RESP_BAD;
+				break;
 			}
 			if (socket_write( &ctx->buf.sock, "\r\n", 2 ) != 2)
-				return RESP_BAD;
+				break;
 			if (!cmdp->param.cont)
 				ctx->literal_pending = 0;
 			if (!tcmd)
@@ -1075,7 +1078,7 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				if (cmdp->tag == tag)
 					goto gottag;
 			error( "IMAP error: unexpected tag %s\n", arg );
-			return RESP_BAD;
+			break;
 		  gottag:
 			if (!(*pcmdp = cmdp->next))
 				ctx->in_progress_append = pcmdp;
@@ -1092,14 +1095,14 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 					if (cmdp->param.create && cmd && (cmdp->param.trycreate || !memcmp( cmd, "[TRYCREATE]", 11 ))) { /* SELECT, APPEND or UID COPY */
 						p = strchr( cmdp->cmd, '"' );
 						if (!submit_imap_cmd( ctx, 0, "CREATE %.*s", strchr( p + 1, '"' ) - p + 1, p )) {
-							resp = RESP_BAD;
+							resp = RESP_CANCEL;
 							goto normal;
 						}
 						/* not waiting here violates the spec, but a server that does not
 						   grok this nonetheless violates it too. */
 						cmdp->param.create = 0;
 						if (!submit_imap_cmd( ctx, cmdp, 0 )) {
-							resp = RESP_BAD;
+							resp = RESP_CANCEL;
 							goto abnormal;
 						}
 						if (!tcmd)
@@ -1108,13 +1111,15 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 					}
 					resp = RESP_NO;
 				} else /*if (!strcmp( "BAD", arg ))*/
-					resp = RESP_BAD;
+					resp = RESP_CANCEL;
 				error( "IMAP command '%s' returned an error: %s %s\n",
 				       memcmp( cmdp->cmd, "LOGIN", 5 ) ? cmdp->cmd : "LOGIN <user> <pass>",
 				       arg, cmd ? cmd : "" );
 			}
 			if ((resp2 = parse_response_code( ctx, cmdp, cmd )) > resp)
 				resp = resp2;
+			if (resp == RESP_CANCEL)
+				imap_invoke_bad_callback( ctx );
 		  normal:
 			if (cmdp->param.done)
 				cmdp->param.done( ctx, cmdp, resp );
@@ -1126,7 +1131,8 @@ get_cmd_result( imap_store_t *ctx, struct imap_cmd *tcmd )
 				return resp;
 		}
 	}
-	/* not reached */
+	imap_invoke_bad_callback( ctx );
+	return RESP_CANCEL;
 }
 
 static void
@@ -1150,13 +1156,34 @@ imap_cancel_store( store_t *gctx )
 	free( ctx );
 }
 
+static void
+imap_invoke_bad_callback( imap_store_t *ctx )
+{
+	if (ctx->gen.bad_callback)
+		ctx->gen.bad_callback( ctx->gen.bad_callback_aux );
+}
+
 static store_t *unowned;
+
+static void
+imap_cancel_unowned( void *gctx )
+{
+	store_t *store, **storep;
+
+	for (storep = &unowned; (store = *storep); storep = &store->next)
+		if (store == gctx) {
+			*storep = store->next;
+			break;
+		}
+	imap_cancel_store( gctx );
+}
 
 static void
 imap_disown_store( store_t *gctx )
 {
 	free_generic_messages( gctx->msgs );
 	gctx->msgs = 0;
+	set_bad_callback( gctx, imap_cancel_unowned, gctx );
 	gctx->next = unowned;
 	unowned = gctx;
 }
@@ -1181,7 +1208,9 @@ imap_cleanup( void )
 
 	for (ctx = unowned; ctx; ctx = nctx) {
 		nctx = ctx->next;
-		imap_exec( (imap_store_t *)ctx, 0, "LOGOUT" );
+		set_bad_callback( ctx, (void (*)(void *))imap_cancel_store, ctx );
+		if (imap_exec( (imap_store_t *)ctx, 0, "LOGOUT" ) == RESP_CANCEL)
+			continue;
 		imap_cancel_store( ctx );
 	}
 }
@@ -1310,6 +1339,7 @@ imap_open_store( store_conf_t *conf,
 			ctx->gen.boxes = 0;
 			ctx->gen.listed = 0;
 			ctx->gen.conf = conf;
+			set_bad_callback( &ctx->gen, 0, 0 );
 			goto final;
 		}
 
@@ -1618,8 +1648,8 @@ imap_flags_helper( imap_store_t *ctx, int uid, char what, int flags)
 
 	buf[imap_make_flags( flags, buf )] = 0;
 	if (!submit_imap_cmd( ctx, 0, "UID STORE %d %cFLAGS.SILENT %s", uid, what, buf ))
-		return DRV_STORE_BAD;
-	return process_imap_replies( ctx ) == RESP_BAD ? DRV_STORE_BAD : DRV_OK;
+		return DRV_CANCELED;
+	return process_imap_replies( ctx ) == RESP_CANCEL ? DRV_CANCELED : DRV_OK;
 }
 
 static int

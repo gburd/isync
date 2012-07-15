@@ -44,6 +44,12 @@
 # define ATTR_PRINTFLIKE(fmt,var)
 #endif
 
+#ifdef __GNUC__
+# define INLINE __inline__
+#else
+# define INLINE
+#endif
+
 #define EXE "mbsync"
 
 typedef struct {
@@ -148,6 +154,9 @@ typedef struct store {
 	string_list_t *boxes; /* _list results - own */
 	unsigned listed:1; /* was _list already run? */
 
+	void (*bad_callback)( void *aux );
+	void *bad_callback_aux;
+
 	/* currently open mailbox */
 	const char *name; /* foreign! maybe preset? */
 	char *path; /* own */
@@ -159,6 +168,13 @@ typedef struct store {
 	int recent; /* # of recent messages - don't trust this beyond the initial read */
 } store_t;
 
+static INLINE void
+set_bad_callback( store_t *ctx, void (*cb)( void *aux ), void *aux )
+{
+	ctx->bad_callback = cb;
+	ctx->bad_callback_aux = aux;
+}
+
 typedef struct {
 	char *data;
 	int len;
@@ -168,8 +184,7 @@ typedef struct {
 #define DRV_OK          0
 #define DRV_MSG_BAD     1
 #define DRV_BOX_BAD     2
-#define DRV_STORE_BAD   3
-#define DRV_CANCELED    4
+#define DRV_CANCELED    3
 
 /* All memory belongs to the driver's user. */
 

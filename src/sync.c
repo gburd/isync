@@ -331,10 +331,6 @@ msg_fetched( int sts, void *aux )
 		return vars->cb( SYNC_CANCELED, 0, vars );
 	case DRV_MSG_BAD:
 		return vars->cb( SYNC_NOGOOD, 0, vars );
-	case DRV_STORE_BAD:
-		INIT_SVARS(vars->aux);
-		(void)svars;
-		return vars->cb( SYNC_BAD(1-t), 0, vars );
 	default:
 		return vars->cb( SYNC_FAIL, 0, vars );
 	}
@@ -357,10 +353,6 @@ msg_stored( int sts, int uid, void *aux )
 		warn( "Warning: %s refuses to store message %d from %s.\n",
 		      str_ms[t], vars->msg->uid, str_ms[1-t] );
 		return vars->cb( SYNC_NOGOOD, 0, vars );
-	case DRV_STORE_BAD:
-		INIT_SVARS(vars->aux);
-		(void)svars;
-		return vars->cb( SYNC_BAD(t), 0, vars );
 	default:
 		return vars->cb( SYNC_FAIL, 0, vars );
 	}
@@ -406,7 +398,6 @@ cancel_sync( sync_vars_t *svars )
 	for (t = 0; t < 2; t++) {
 		int other_state = svars->state[1-t];
 		if (svars->ret & SYNC_BAD(t)) {
-			svars->drv[t]->cancel_store( svars->ctx[t] );
 			cancel_done( AUX );
 		} else {
 			svars->drv[t]->cancel( svars->ctx[t], cancel_done, AUX );
@@ -429,6 +420,16 @@ cancel_done( void *aux )
 	}
 }
 
+static void
+store_bad( void *aux )
+{
+	DECL_INIT_SVARS(aux);
+
+	svars->drv[t]->cancel_store( svars->ctx[t] );
+	svars->ret |= SYNC_BAD(t);
+	cancel_sync( svars );
+}
+
 
 static int
 check_ret( int sts, void *aux )
@@ -437,11 +438,6 @@ check_ret( int sts, void *aux )
 
 	switch (sts) {
 	case DRV_CANCELED:
-		return 1;
-	case DRV_STORE_BAD:
-		INIT_SVARS(aux);
-		svars->ret |= SYNC_BAD(t);
-		cancel_sync( svars );
 		return 1;
 	case DRV_BOX_BAD:
 		INIT_SVARS(aux);
@@ -522,6 +518,7 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 			(!names[t] || (ctx[t]->conf->map_inbox && !strcmp( ctx[t]->conf->map_inbox, names[t] ))) ?
 				"INBOX" : names[t];
 		ctx[t]->uidvalidity = -1;
+		set_bad_callback( ctx[t], store_bad, AUX );
 		svars->drv[t] = ctx[t]->conf->driver;
 		svars->drv[t]->prepare_paths( ctx[t] );
 	}

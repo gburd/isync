@@ -673,6 +673,17 @@ sync_chans( main_vars_t *mvars, int ent )
 }
 
 static void
+store_bad( void *aux )
+{
+	MVARS(aux)
+
+	mvars->drv[t]->cancel_store( mvars->ctx[t] );
+	mvars->ret = mvars->skip = 1;
+	mvars->state[t] = ST_CLOSED;
+	sync_chans( mvars, E_OPEN );
+}
+
+static void
 store_opened( store_t *ctx, void *aux )
 {
 	MVARS(aux)
@@ -685,6 +696,7 @@ store_opened( store_t *ctx, void *aux )
 	}
 	mvars->ctx[t] = ctx;
 	if (!mvars->skip && !mvars->boxlist && mvars->chan->patterns && !ctx->listed) {
+		set_bad_callback( ctx, store_bad, AUX );
 		mvars->drv[t]->list( ctx, store_listed, AUX );
 	} else {
 		mvars->state[t] = ST_OPEN;
@@ -697,20 +709,19 @@ store_listed( int sts, void *aux )
 {
 	MVARS(aux)
 
-	mvars->state[t] = ST_OPEN;
 	switch (sts) {
+	case DRV_CANCELED:
+		return;
 	case DRV_OK:
 		mvars->ctx[t]->listed = 1;
 		if (mvars->ctx[t]->conf->map_inbox)
 			add_string_list( &mvars->ctx[t]->boxes, mvars->ctx[t]->conf->map_inbox );
 		break;
-	case DRV_STORE_BAD:
-		mvars->drv[t]->cancel_store( mvars->ctx[t] );
-		mvars->state[t] = ST_CLOSED;
 	default:
 		mvars->ret = mvars->skip = 1;
 		break;
 	}
+	mvars->state[t] = ST_OPEN;
 	sync_chans( mvars, E_OPEN );
 }
 

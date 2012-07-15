@@ -160,6 +160,12 @@ maildir_cleanup_drv( void )
 }
 
 static void
+maildir_invoke_bad_callback( store_t *ctx )
+{
+	ctx->bad_callback( ctx->bad_callback_aux );
+}
+
+static void
 maildir_list( store_t *gctx,
               void (*cb)( int sts, void *aux ), void *aux )
 {
@@ -168,7 +174,8 @@ maildir_list( store_t *gctx,
 
 	if (!(dir = opendir( gctx->conf->path ))) {
 		error( "%s: %s\n", gctx->conf->path, strerror(errno) );
-		cb( DRV_STORE_BAD, aux );
+		maildir_invoke_bad_callback( gctx );
+		cb( DRV_CANCELED, aux );
 		return;
 	}
 	while ((de = readdir( dir ))) {
@@ -219,7 +226,7 @@ maildir_free_scan( msglist_t *msglist )
 #define _24_HOURS (3600 * 24)
 
 static int
-maildir_validate( const char *prefix, const char *box, int create )
+maildir_validate( const char *prefix, const char *box, int create, maildir_store_t *ctx )
 {
 	DIR *dirp;
 	struct dirent *entry;
@@ -235,7 +242,8 @@ maildir_validate( const char *prefix, const char *box, int create )
 				if (mkdir( buf, 0700 )) {
 					error( "Maildir error: mkdir %s: %s (errno %d)\n",
 					       buf, strerror(errno), errno );
-					return DRV_STORE_BAD;
+					maildir_invoke_bad_callback( &ctx->gen );
+					return DRV_CANCELED;
 				}
 			  mkdirs:
 				for (i = 0; i < 3; i++) {
@@ -781,8 +789,8 @@ maildir_select( store_t *gctx, int minuid, int maxuid, int *excs, int nexcs,
 	ctx->excs = nfrealloc( excs, nexcs * sizeof(int) );
 	ctx->nexcs = nexcs;
 
-	if (maildir_validate( gctx->path, "", ctx->gen.opts & OPEN_CREATE ) != DRV_OK)
-		return cb( DRV_BOX_BAD, aux );
+	if ((ret = maildir_validate( gctx->path, "", ctx->gen.opts & OPEN_CREATE, ctx )) != DRV_OK)
+		return cb( ret, aux );
 
 	nfsnprintf( uvpath, sizeof(uvpath), "%s/.uidvalidity", gctx->path );
 #ifndef USE_DB
@@ -1007,7 +1015,7 @@ maildir_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 			free( data->data );
 			return cb( DRV_BOX_BAD, 0, aux );
 		}
-		if ((ret = maildir_validate( gctx->conf->path, gctx->conf->trash, gctx->opts & OPEN_CREATE )) != DRV_OK) {
+		if ((ret = maildir_validate( gctx->conf->path, gctx->conf->trash, gctx->opts & OPEN_CREATE, ctx )) != DRV_OK) {
 			free( data->data );
 			return cb( ret, 0, aux );
 		}
@@ -1147,7 +1155,7 @@ maildir_trash_msg( store_t *gctx, message_t *gmsg,
 		if (!rename( buf, nbuf ))
 			break;
 		if (!stat( buf, &st )) {
-			if ((ret = maildir_validate( gctx->conf->path, gctx->conf->trash, 1 )) != DRV_OK)
+			if ((ret = maildir_validate( gctx->conf->path, gctx->conf->trash, 1, ctx )) != DRV_OK)
 				return cb( ret, aux );
 			if (!rename( buf, nbuf ))
 				break;
