@@ -403,14 +403,17 @@ cancel_sync( sync_vars_t *svars )
 {
 	int t;
 
-	/* the 1st round is guaranteed not to trash svars */
-	for (t = 0; t < 2; t++)
+	for (t = 0; t < 2; t++) {
+		int other_state = svars->state[1-t];
 		if (svars->ret & SYNC_BAD(t)) {
 			svars->drv[t]->cancel_store( svars->ctx[t] );
 			cancel_done( AUX );
 		} else {
 			svars->drv[t]->cancel( svars->ctx[t], cancel_done, AUX );
 		}
+		if (other_state & ST_CANCELED)
+			break;
+	}
 }
 
 static void
