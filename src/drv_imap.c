@@ -1727,10 +1727,10 @@ imap_list( store_t *gctx,
 
 static void
 imap_cancel( store_t *gctx,
-             void (*cb)( int sts, void *aux ), void *aux )
+             void (*cb)( void *aux ), void *aux )
 {
 	(void)gctx;
-	cb( DRV_OK, aux );
+	cb( aux );
 }
 
 static void

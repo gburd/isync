@@ -396,7 +396,7 @@ stats( sync_vars_t *svars )
 static void sync_bail( sync_vars_t *svars );
 static void sync_bail1( sync_vars_t *svars );
 static void sync_bail2( sync_vars_t *svars );
-static void cancel_done( int sts, void *aux );
+static void cancel_done( void *aux );
 
 static void
 cancel_sync( sync_vars_t *svars )
@@ -405,21 +405,19 @@ cancel_sync( sync_vars_t *svars )
 
 	/* the 1st round is guaranteed not to trash svars */
 	for (t = 0; t < 2; t++)
-		if (svars->ret & SYNC_BAD(t))
-			cancel_done( DRV_STORE_BAD, AUX );
-		else
+		if (svars->ret & SYNC_BAD(t)) {
+			svars->drv[t]->cancel_store( svars->ctx[t] );
+			cancel_done( AUX );
+		} else {
 			svars->drv[t]->cancel( svars->ctx[t], cancel_done, AUX );
+		}
 }
 
 static void
-cancel_done( int sts, void *aux )
+cancel_done( void *aux )
 {
 	DECL_INIT_SVARS(aux);
 
-	if (sts != DRV_OK) {
-		svars->ret |= SYNC_BAD(t);
-		svars->drv[t]->cancel_store( svars->ctx[t] );
-	}
 	svars->state[t] |= ST_CANCELED;
 	if (svars->state[1-t] & ST_CANCELED) {
 		Fclose( svars->nfp );

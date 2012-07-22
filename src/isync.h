@@ -210,7 +210,7 @@ struct driver {
 	int (*close)( store_t *ctx, /* IMAP-style: expunge inclusive */
 	              int (*cb)( int sts, void *aux ), void *aux );
 	void (*cancel)( store_t *ctx, /* only not yet sent commands */
-	                void (*cb)( int sts, void *aux ), void *aux );
+	                void (*cb)( void *aux ), void *aux );
 	void (*commit)( store_t *ctx );
 };
 
