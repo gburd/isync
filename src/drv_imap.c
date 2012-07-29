@@ -1140,7 +1140,7 @@ imap_cancel_store( store_t *gctx )
 {
 	imap_store_t *ctx = (imap_store_t *)gctx;
 
-	free_generic_messages( gctx->msgs );
+	free_generic_messages( ctx->gen.msgs );
 	free_string_list( ctx->gen.boxes );
 	if (ctx->buf.sock.fd >= 0)
 		close( ctx->buf.sock.fd );
