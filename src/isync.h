@@ -210,20 +210,20 @@ struct driver {
 	              void (*cb)( int sts, void *aux ), void *aux );
 	void (*prepare_paths)( store_t *ctx );
 	void (*prepare_opts)( store_t *ctx, int opts );
-	int (*select)( store_t *ctx, int minuid, int maxuid, int *excs, int nexcs,
-	               int (*cb)( int sts, void *aux ), void *aux );
-	int (*fetch_msg)( store_t *ctx, message_t *msg, msg_data_t *data,
-	                  int (*cb)( int sts, void *aux ), void *aux );
-	int (*store_msg)( store_t *ctx, msg_data_t *data, int to_trash,
-	                  int (*cb)( int sts, int uid, void *aux ), void *aux );
-	int (*find_msg)( store_t *ctx, const char *tuid,
-	                 int (*cb)( int sts, int uid, void *aux ), void *aux );
-	int (*set_flags)( store_t *ctx, message_t *msg, int uid, int add, int del, /* msg can be null, therefore uid as a fallback */
-	                  int (*cb)( int sts, void *aux ), void *aux );
-	int (*trash_msg)( store_t *ctx, message_t *msg, /* This may expunge the original message immediately, but it needn't to */
-	                  int (*cb)( int sts, void *aux ), void *aux );
-	int (*close)( store_t *ctx, /* IMAP-style: expunge inclusive */
-	              int (*cb)( int sts, void *aux ), void *aux );
+	void (*select)( store_t *ctx, int minuid, int maxuid, int *excs, int nexcs,
+	                void (*cb)( int sts, void *aux ), void *aux );
+	void (*fetch_msg)( store_t *ctx, message_t *msg, msg_data_t *data,
+	                   void (*cb)( int sts, void *aux ), void *aux );
+	void (*store_msg)( store_t *ctx, msg_data_t *data, int to_trash,
+	                   void (*cb)( int sts, int uid, void *aux ), void *aux );
+	void (*find_msg)( store_t *ctx, const char *tuid,
+	                  void (*cb)( int sts, int uid, void *aux ), void *aux );
+	void (*set_flags)( store_t *ctx, message_t *msg, int uid, int add, int del, /* msg can be null, therefore uid as a fallback */
+	                   void (*cb)( int sts, void *aux ), void *aux );
+	void (*trash_msg)( store_t *ctx, message_t *msg, /* This may expunge the original message immediately, but it needn't to */
+	                   void (*cb)( int sts, void *aux ), void *aux );
+	void (*close)( store_t *ctx, /* IMAP-style: expunge inclusive */
+	               void (*cb)( int sts, void *aux ), void *aux );
 	void (*cancel)( store_t *ctx, /* only not yet sent commands */
 	                void (*cb)( void *aux ), void *aux );
 	void (*commit)( store_t *ctx );
