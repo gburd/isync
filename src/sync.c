@@ -246,6 +246,11 @@ msg_fetched( int sts, void *aux )
 	switch (sts) {
 	case DRV_OK:
 		INIT_SVARS(vars->aux);
+		if (check_cancel( svars )) {
+			free( vars->data.data );
+			vars->cb( SYNC_CANCELED, 0, vars );
+			return;
+		}
 
 		vars->msg->flags = vars->data.flags;
 
@@ -482,16 +487,15 @@ check_ret( int sts, void *aux )
 {
 	DECL_SVARS;
 
-	switch (sts) {
-	case DRV_CANCELED:
+	if (sts == DRV_CANCELED)
 		return 1;
-	case DRV_BOX_BAD:
-		INIT_SVARS(aux);
+	INIT_SVARS(aux);
+	if (sts == DRV_BOX_BAD) {
 		svars->ret |= SYNC_FAIL;
 		cancel_sync( svars );
 		return 1;
 	}
-	return 0;
+	return check_cancel( svars );
 }
 
 #define SVARS_CHECK_RET \
