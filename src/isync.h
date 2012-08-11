@@ -259,6 +259,9 @@ typedef struct {
 */
 #define DRV_CRLF        1
 
+#define LIST_PATH       1
+#define LIST_INBOX      2
+
 struct driver {
 	int flags;
 
@@ -283,8 +286,8 @@ struct driver {
 	 * Pending commands will have their callbacks synchronously invoked with DRV_CANCELED. */
 	void (*cancel_store)( store_t *ctx );
 
-	/* List the mailboxes in this store. */
-	void (*list)( store_t *ctx,
+	/* List the mailboxes in this store. Flags are ORed LIST_* values. */
+	void (*list)( store_t *ctx, int flags,
 	              void (*cb)( int sts, void *aux ), void *aux );
 
 	/* Invoked before select(), this informs the driver which operations (OP_*)
@@ -415,6 +418,10 @@ void free_string_list( string_list_t *list );
 
 void free_generic_messages( message_t * );
 
+#ifndef HAVE_MEMRCHR
+void *memrchr( const void *s, int c, size_t n );
+#endif
+
 void *nfmalloc( size_t sz );
 void *nfcalloc( size_t sz );
 void *nfrealloc( void *mem, size_t sz );
@@ -425,6 +432,8 @@ int ATTR_PRINTFLIKE(3, 4) nfsnprintf( char *buf, int blen, const char *fmt, ... 
 void ATTR_NORETURN oob( void );
 
 char *expand_strdup( const char *s );
+
+int map_name( char *arg, char in, char out );
 
 void sort_ints( int *arr, int len );
 

@@ -105,6 +105,13 @@ There are two auxiliary object classes: Accounts and Groups. An Account
 describes the connection part of remote Stores, so a server connection can be
 shared between multiple Stores. A Group aggregates multiple Channels to
 save typing on the command line.
+.P
+File system locations (in particular, \fBPath\fR and \fBInbox\fR) use the
+Store's internal path separators, which may be slashes, periods, etc., or
+even combinations thereof.
+.br
+Mailbox names, OTOH, always use canonical path separators, which are
+Unix-like forward slashes.
 ..
 .SS All Stores
 These options can be used in all supported Store types.
@@ -140,6 +147,7 @@ If \fIsize\fR is 0, the maximum message size is \fBunlimited\fR.
 Create a virtual mailbox (relative to \fBPath\fR), which is backed by
 the \fBINBOX\fR. Makes sense in conjunction with \fBPatterns\fR in the
 Channels section.
+This virtual mailbox does not support subfolders.
 ..
 .TP
 \fBTrash\fR \fImailbox\fR
@@ -305,6 +313,11 @@ Selects whether the server's first "personal" NAMESPACE should be prefixed to
 mailbox names. Disabling this makes sense for some broken IMAP servers.
 This option is meaningless if a \fBPath\fR was specified.
 (Default: \fIyes\fR)
+..
+.TP
+\fBPathDelimiter\fR \fIdelim\fR
+Specify the server's hierarchy delimiter character.
+(Default: taken from the server's first "personal" NAMESPACE)
 ..
 .SS Channels
 .TP

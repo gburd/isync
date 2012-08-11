@@ -94,6 +94,29 @@ maildir_parse_flags( const char *base )
 	return flags;
 }
 
+static char *
+maildir_join_path( const char *prefix, const char *box )
+{
+	char *out, *p;
+	int pl, bl, n;
+	char c;
+
+	pl = strlen( prefix );
+	for (bl = 0, n = 0; (c = box[bl]); bl++)
+		if (c == '/')
+			n++;
+	out = nfmalloc( pl + bl + n + 1 );
+	memcpy( out, prefix, pl );
+	p = out + pl;
+	while ((c = *box++)) {
+		*p++ = c;
+		if (c == '/')
+			*p++ = '.';
+	}
+	*p = 0;
+	return out;
+}
+
 static void
 maildir_open_store( store_conf_t *conf,
                     void (*cb)( store_t *ctx, void *aux ), void *aux )
@@ -109,7 +132,8 @@ maildir_open_store( store_conf_t *conf,
 	ctx = nfcalloc( sizeof(*ctx) );
 	ctx->gen.conf = conf;
 	ctx->uvfd = -1;
-	nfasprintf( &ctx->trash, "%s%s", conf->path, conf->trash );
+	if (conf->trash)
+		ctx->trash = maildir_join_path( conf->path, conf->trash );
 	cb( &ctx->gen, aux );
 }
 
@@ -168,40 +192,87 @@ maildir_invoke_bad_callback( store_t *ctx )
 	ctx->bad_callback( ctx->bad_callback_aux );
 }
 
-static void
-maildir_list( store_t *gctx,
-              void (*cb)( int sts, void *aux ), void *aux )
+static int maildir_list_part( store_t *gctx, int doInbox, int *flags );
+
+static int
+maildir_list_recurse( store_t *gctx, int isBox, int *flags, const char *inbox,
+                      char *path, int pathLen, char *name, int nameLen )
 {
 	DIR *dir;
+	int pl, nl;
 	struct dirent *de;
+	struct stat st;
 
-	if (!(dir = opendir( gctx->conf->path ))) {
-		sys_error( "Maildir error: cannot list %s", gctx->conf->path );
-		maildir_invoke_bad_callback( gctx );
-		cb( DRV_CANCELED, aux );
-		return;
+	if (isBox) {
+		nfsnprintf( path + pathLen, _POSIX_PATH_MAX - pathLen, "/cur" );
+		if (stat( path, &st ) || !S_ISDIR(st.st_mode))
+			return 0;
+		path[pathLen] = 0;
+		add_string_list( &gctx->boxes, name );
+		name[nameLen++] = '/';
+	}
+	if (!(dir = opendir( path ))) {
+		sys_error( "Maildir error: cannot list %s", path );
+		return -1;
 	}
 	while ((de = readdir( dir ))) {
-		const char *inbox = ((maildir_store_conf_t *)gctx->conf)->inbox;
-		int bl, isibx;
-		struct stat st;
-		char buf[PATH_MAX];
-
-		if (*de->d_name == '.')
-			continue;
-		bl = nfsnprintf( buf, sizeof(buf), "%s%s/cur", gctx->conf->path, de->d_name );
-		if (stat( buf, &st ) || !S_ISDIR(st.st_mode))
-			continue;
-		isibx = !memcmp( buf, inbox, bl - 4 ) && !inbox[bl - 4];
-		if (!isibx && !strcmp( de->d_name, "INBOX" )) {
-			warn( "Maildir warning: ignoring INBOX in %s\n", gctx->conf->path );
-			continue;
+		const char *ent = de->d_name;
+		pl = pathLen + nfsnprintf( path + pathLen, _POSIX_PATH_MAX - pathLen, "%s", ent );
+		if (inbox && !memcmp( path, inbox, pl ) && !inbox[pl]) {
+			if (maildir_list_part( gctx, 1, flags ) < 0)
+				return -1;
+		} else {
+			if (!memcmp( ent, "INBOX", 6 )) {
+				path[pathLen] = 0;
+				warn( "Maildir warning: ignoring INBOX in %s\n", path );
+				continue;
+			}
+			if (*ent == '.') {
+				if (!isBox)
+					continue;
+				ent++;
+			} else {
+				if (isBox)
+					continue;
+			}
+			nl = nameLen + nfsnprintf( name + nameLen, _POSIX_PATH_MAX - nameLen, "%s", ent );
+			if (maildir_list_recurse( gctx, 1, flags, inbox, path, pl, name, nl ) < 0)
+				return -1;
 		}
-		add_string_list( &gctx->boxes, isibx ? "INBOX" : de->d_name );
 	}
 	closedir (dir);
+	return 0;
+}
 
-	cb( DRV_OK, aux );
+static int
+maildir_list_part( store_t *gctx, int doInbox, int *flags )
+{
+	int pl, nl;
+	const char *inbox = ((maildir_store_conf_t *)gctx->conf)->inbox;
+	char path[_POSIX_PATH_MAX], name[_POSIX_PATH_MAX];
+
+	if (doInbox) {
+		*flags &= ~LIST_INBOX;
+		pl = nfsnprintf( path, _POSIX_PATH_MAX, "%s", inbox );
+		nl = nfsnprintf( name, _POSIX_PATH_MAX, "INBOX" );
+		return maildir_list_recurse( gctx, 1, flags, 0, path, pl, name, nl );
+	} else {
+		pl = nfsnprintf( path, _POSIX_PATH_MAX, "%s", gctx->conf->path );
+		return maildir_list_recurse( gctx, 0, flags, inbox, path, pl, name, 0 );
+	}
+}
+
+static void
+maildir_list( store_t *gctx, int flags,
+              void (*cb)( int sts, void *aux ), void *aux )
+{
+	if (((flags & LIST_PATH) && maildir_list_part( gctx, 0, &flags ) < 0) ||
+	    ((flags & LIST_INBOX) && maildir_list_part( gctx, 1, &flags ) < 0)) {
+		maildir_invoke_bad_callback( gctx );
+		cb( DRV_CANCELED, aux );
+	} else {
+		cb( DRV_OK, aux );
+	}
 }
 
 static const char *subdirs[] = { "cur", "new", "tmp" };
@@ -237,8 +308,9 @@ maildir_validate( const char *box, int create, maildir_store_t *ctx )
 {
 	DIR *dirp;
 	struct dirent *entry;
+	char *p;
 	time_t now;
-	int i, bl;
+	int i, bl, ret;
 	struct stat st;
 	char buf[_POSIX_PATH_MAX];
 
@@ -246,6 +318,13 @@ maildir_validate( const char *box, int create, maildir_store_t *ctx )
 	if (stat( buf, &st )) {
 		if (errno == ENOENT) {
 			if (create) {
+				p = memrchr( buf, '/', bl - 1 );
+				if (*(p + 1) == '.') {
+					*p = 0;
+					if ((ret = maildir_validate( buf, 1, ctx )) != DRV_OK)
+						return ret;
+					*p = '/';
+				}
 				if (mkdir( buf, 0700 )) {
 					sys_error( "Maildir error: cannot create mailbox '%s'", buf );
 					maildir_invoke_bad_callback( &ctx->gen );
@@ -822,10 +901,10 @@ maildir_select( store_t *gctx, int create,
 #ifdef USE_DB
 	ctx->db = 0;
 #endif /* USE_DB */
-	if (!strcmp( gctx->name, "INBOX" ))
-		gctx->path = nfstrdup( ((maildir_store_conf_t *)gctx->conf)->inbox );
-	else
-		nfasprintf( &gctx->path, "%s%s", gctx->conf->path, gctx->name );
+	gctx->path =
+		(!memcmp( gctx->name, "INBOX", 5 ) && (!gctx->name[5] || gctx->name[5] == '/')) ?
+			maildir_join_path( ((maildir_store_conf_t *)gctx->conf)->inbox, gctx->name + 5 ) :
+			maildir_join_path( gctx->conf->path, gctx->name );
 
 	if ((ret = maildir_validate( gctx->path, create, ctx )) != DRV_OK) {
 		cb( ret, aux );

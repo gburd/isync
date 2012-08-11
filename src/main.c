@@ -129,7 +129,7 @@ matches( const char *t, const char *p )
 		} else if (*p == '%') {
 			p++;
 			do {
-				if (*t == '.' || *t == '/') /* this is "somewhat" hacky ... */
+				if (*t == '/')
 					return 0;
 				if (matches( t, p ))
 					return 1;
@@ -690,6 +690,8 @@ static void
 store_opened( store_t *ctx, void *aux )
 {
 	MVARS(aux)
+	string_list_t *cpat;
+	int flags;
 
 	if (!ctx) {
 		mvars->ret = mvars->skip = 1;
@@ -699,8 +701,13 @@ store_opened( store_t *ctx, void *aux )
 	}
 	mvars->ctx[t] = ctx;
 	if (!mvars->skip && !mvars->boxlist && mvars->chan->patterns && !ctx->listed) {
+		for (flags = 0, cpat = mvars->chan->patterns; cpat; cpat = cpat->next) {
+			const char *pat = cpat->string;
+			if (*pat != '!')
+				flags |= (!memcmp( pat, "INBOX", 5 ) && (!pat[5] || pat[5] == '/')) ? LIST_INBOX : LIST_PATH;
+		}
 		set_bad_callback( ctx, store_bad, AUX );
-		mvars->drv[t]->list( ctx, store_listed, AUX );
+		mvars->drv[t]->list( ctx, flags, store_listed, AUX );
 	} else {
 		mvars->state[t] = ST_OPEN;
 		sync_chans( mvars, E_OPEN );

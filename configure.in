@@ -12,7 +12,7 @@ fi
 CPPFLAGS="$CPPFLAGS -D_GNU_SOURCE"
 
 AC_CHECK_HEADERS(sys/poll.h sys/select.h)
-AC_CHECK_FUNCS(vasprintf)
+AC_CHECK_FUNCS(vasprintf memrchr)
 
 AC_CHECK_LIB(socket, socket, [SOCK_LIBS="-lsocket"])
 AC_CHECK_LIB(nsl, inet_ntoa, [SOCK_LIBS="$SOCK_LIBS -lnsl"])

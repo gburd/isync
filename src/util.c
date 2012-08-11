@@ -229,6 +229,19 @@ vasprintf( char **strp, const char *fmt, va_list ap )
 }
 #endif
 
+#ifndef HAVE_MEMRCHR
+void *
+memrchr( const void *s, int c, size_t n )
+{
+	u_char *b = (u_char *)s, *e = b + n;
+
+	while (--e >= b)
+		if (*e == c)
+			return (void *)e;
+	return 0;
+}
+#endif
+
 void
 oob( void )
 {
@@ -376,6 +389,29 @@ expand_strdup( const char *s )
 		return r;
 	} else
 		return nfstrdup( s );
+}
+
+/* Return value: 0 = ok, -1 = out found in arg, -2 = in found in arg but no out specified */
+int
+map_name( char *arg, char in, char out )
+{
+	int l, k;
+
+	if (!in || in == out)
+		return 0;
+	for (l = 0; arg[l]; l++)
+		if (arg[l] == in) {
+			if (!out)
+				return -2;
+			arg[l] = out;
+		} else if (arg[l] == out) {
+			/* restore original name for printing error message */
+			for (k = 0; k < l; k++)
+				if (arg[k] == out)
+					arg[k] = in;
+			return -1;
+		}
+	return 0;
 }
 
 static int
