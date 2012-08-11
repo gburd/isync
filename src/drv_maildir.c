@@ -1101,7 +1101,7 @@ maildir_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 	maildir_make_flags( data->flags, fbuf );
 	nfsnprintf( buf, sizeof(buf), "%s%s/tmp/%s%s", prefix, box, base, fbuf );
 	if ((fd = open( buf, O_WRONLY|O_CREAT|O_EXCL, 0600 )) < 0) {
-		if (errno != ENOENT) {
+		if (errno != ENOENT || !to_trash) {
 			sys_error( "Maildir error: cannot create %s", buf );
 			free( data->data );
 			cb( DRV_BOX_BAD, 0, aux );
