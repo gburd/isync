@@ -142,6 +142,7 @@ typedef struct store_conf {
 	const char *trash;
 	unsigned max_size; /* off_t is overkill */
 	unsigned trash_remote_new:1, trash_only_new:1;
+	char flat_delim;
 } store_conf_t;
 
 typedef struct string_list {
@@ -216,7 +217,8 @@ typedef struct store {
 	void *bad_callback_aux;
 
 	/* currently open mailbox */
-	const char *name; /* foreign! maybe preset? */
+	const char *orig_name; /* foreign! maybe preset? */
+	char *name; /* foreign! maybe preset? */
 	char *path; /* own */
 	message_t *msgs; /* own */
 	int uidvalidity;

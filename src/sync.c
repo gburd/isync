@@ -467,6 +467,7 @@ stats( sync_vars_t *svars )
 static void sync_bail( sync_vars_t *svars );
 static void sync_bail1( sync_vars_t *svars );
 static void sync_bail2( sync_vars_t *svars );
+static void sync_bail3( sync_vars_t *svars );
 static void cancel_done( void *aux );
 
 static void
@@ -605,9 +606,16 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 	svars->srecadd = &svars->srecs;
 
 	for (t = 0; t < 2; t++) {
-		ctx[t]->name =
+		ctx[t]->orig_name =
 			(!names[t] || (ctx[t]->conf->map_inbox && !strcmp( ctx[t]->conf->map_inbox, names[t] ))) ?
 				"INBOX" : names[t];
+		ctx[t]->name = nfstrdup( ctx[t]->orig_name );
+		if (ctx[t]->conf->flat_delim && map_name( ctx[t]->name, '/', ctx[t]->conf->flat_delim ) < 0) {
+			error( "Error: canonical mailbox name '%s' contains flattened hierarchy delimiter\n", ctx[t]->name );
+			svars->ret = SYNC_FAIL;
+			sync_bail3( svars );
+			return;
+		}
 		ctx[t]->uidvalidity = -1;
 		set_bad_callback( ctx[t], store_bad, AUX );
 		svars->drv[t] = ctx[t]->conf->driver;
@@ -615,7 +623,7 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 	/* Both boxes must be fully set up at this point, so that error exit paths
 	 * don't run into uninitialized variables. */
 	for (t = 0; t < 2; t++) {
-		info( "Selecting %s %s...\n", str_ms[t], ctx[t]->name );
+		info( "Selecting %s %s...\n", str_ms[t], ctx[t]->orig_name );
 		DRIVER_CALL(select( ctx[t], (chan->ops[t] & OP_CREATE) != 0, box_selected, AUX ));
 	}
 }
@@ -696,7 +704,7 @@ box_selected( int sts, void *aux )
 	}
 	if (fcntl( svars->lfd, F_SETLK, &lck )) {
 		error( "Error: channel :%s:%s-:%s:%s is locked\n",
-		         chan->stores[M]->name, ctx[M]->name, chan->stores[S]->name, ctx[S]->name );
+		         chan->stores[M]->name, ctx[M]->orig_name, chan->stores[S]->name, ctx[S]->orig_name );
 		svars->ret = SYNC_FAIL;
 		sync_bail1( svars );
 		return;
@@ -1721,6 +1729,14 @@ sync_bail2( sync_vars_t *svars )
 	free( svars->jname );
 	free( svars->dname );
 	flushn();
+	sync_bail3( svars );
+}
+
+static void
+sync_bail3( sync_vars_t *svars )
+{
+	free( svars->ctx[M]->name );
+	free( svars->ctx[S]->name );
 	sync_deref( svars );
 }
 

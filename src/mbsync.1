@@ -150,6 +150,15 @@ Channels section.
 This virtual mailbox does not support subfolders.
 ..
 .TP
+\fBFlatten\fR \fIdelim\fR
+Flatten the hierarchy within this Store by substituting the canonical
+hierarchy delimiter \fB/\fR with \fIdelim\fR.
+This can be useful when the MUA used to access the Store provides
+suboptimal handling of hierarchical mailboxes, as is the case with
+\fBMutt\fR.
+A common choice for the delimiter is \fB.\fR.
+..
+.TP
 \fBTrash\fR \fImailbox\fR
 Specifies a mailbox (relative to \fBPath\fR) to copy deleted messages to
 prior to expunging. See \fBINHERENT PROBLEMS\fR below.
@@ -318,6 +327,9 @@ This option is meaningless if a \fBPath\fR was specified.
 \fBPathDelimiter\fR \fIdelim\fR
 Specify the server's hierarchy delimiter character.
 (Default: taken from the server's first "personal" NAMESPACE)
+.br
+Do \fBNOT\fR abuse this to re-interpret the hierarchy.
+Use \fBFlatten\fR instead.
 ..
 .SS Channels
 .TP
