@@ -746,11 +746,13 @@ done_sync( int sts, void *aux )
 	if (sts) {
 		mvars->ret = 1;
 		if (sts & (SYNC_BAD(M) | SYNC_BAD(S))) {
-			mvars->skip = 1;
 			if (sts & SYNC_BAD(M))
 				mvars->state[M] = ST_CLOSED;
 			if (sts & SYNC_BAD(S))
 				mvars->state[S] = ST_CLOSED;
+			mvars->skip = 1;
+		} else if (sts & SYNC_FAIL_ALL) {
+			mvars->skip = 1;
 		}
 	}
 	sync_chans( mvars, E_SYNC );

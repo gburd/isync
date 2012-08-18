@@ -451,9 +451,10 @@ extern const char *str_ms[2], *str_hl[2];
 
 #define SYNC_OK       0 /* assumed to be 0 */
 #define SYNC_FAIL     1
-#define SYNC_BAD(ms)  (2<<(ms))
-#define SYNC_NOGOOD   8 /* internal */
-#define SYNC_CANCELED 16 /* internal */
+#define SYNC_FAIL_ALL 2
+#define SYNC_BAD(ms)  (4<<(ms))
+#define SYNC_NOGOOD   16 /* internal */
+#define SYNC_CANCELED 32 /* internal */
 
 /* All passed pointers must stay alive until cb is called. */
 void sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,

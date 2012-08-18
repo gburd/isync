@@ -647,7 +647,7 @@ box_selected( int sts, void *aux )
 		if (!ctx[S]->path) {
 			error( "Error: store '%s' does not support in-box sync state\n", chan->stores[S]->name );
 		  sbail:
-			svars->ret = SYNC_BAD(S);
+			svars->ret = SYNC_FAIL;
 			sync_bail2( svars );
 			return;
 		}
