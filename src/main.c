@@ -437,6 +437,9 @@ main( int argc, char **argv )
 		case 'J':
 			DFlags |= KEEPJOURNAL;
 			break;
+		case 'Z':
+			DFlags |= ZERODELAY;
+			break;
 		case 'v':
 			version();
 		case 'h':

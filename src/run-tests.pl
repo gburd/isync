@@ -282,7 +282,7 @@ sub killcfg()
 sub runsync($)
 {
 #	open FILE, "valgrind -q --log-fd=3 ../mbsync ".shift()." -c .mbsyncrc test 3>&2 2>&1 |";
-	open FILE, "../mbsync -D ".shift()." -c .mbsyncrc test 2>&1 |";
+	open FILE, "../mbsync -D -Z ".shift()." -c .mbsyncrc test 2>&1 |";
 	my @out = <FILE>;
 	close FILE or push(@out, $! ? "*** error closing mbsync: $!\n" : "*** mbsync exited with signal ".($?&127).", code ".($?>>8)."\n");
 	return $?, @out;

@@ -395,6 +395,7 @@ void cram( const char *challenge, const char *user, const char *pass,
 #define QUIET        8
 #define VERYQUIET    16
 #define KEEPJOURNAL  32
+#define ZERODELAY    64
 
 extern int DFlags;
 

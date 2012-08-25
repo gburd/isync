@@ -507,6 +507,7 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 #endif /* USE_DB */
 	msg_t *entry;
 	int i, j, uid, bl, fnl, ret;
+	time_t now, stamps[2];
 	struct stat st;
 	char buf[_POSIX_PATH_MAX], nbuf[_POSIX_PATH_MAX];
 
@@ -536,11 +537,32 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 		}
 #endif /* USE_DB */
 		bl = nfsnprintf( buf, sizeof(buf) - 4, "%s/", ctx->gen.path );
+	  restat:
+		now = time( 0 );
+		for (i = 0; i < 2; i++) {
+			memcpy( buf + bl, subdirs[i], 4 );
+			if (stat( buf, &st )) {
+				sys_error( "Maildir error: cannot stat %s", buf );
+				goto dfail;
+			}
+			if (st.st_mtime == now && !(DFlags & ZERODELAY)) {
+				/* If the modification happened during this second, we wouldn't be able to
+				 * tell if there were further modifications during this second. So wait.
+				 * This has the nice side effect that we wait for "batches" of changes to
+				 * complete. On the downside, it can potentially block indefinitely. */
+				info( "Maildir notice: sleeping due to recent directory modification.\n" );
+				sleep( 1 ); /* FIXME: should make this async */
+				goto restat;
+			}
+			stamps[i] = st.st_mtime;
+		}
 		for (i = 0; i < 2; i++) {
 			memcpy( buf + bl, subdirs[i], 4 );
 			if (!(d = opendir( buf ))) {
 				sys_error( "Maildir error: cannot list %s", buf );
+			  rfail:
 				maildir_free_scan( msglist );
+			  dfail:
 #ifdef USE_DB
 				if (ctx->db)
 					tdb->close( tdb, 0 );
@@ -599,6 +621,22 @@ maildir_scan( maildir_store_t *ctx, msglist_t *msglist )
 				}
 			}
 			closedir( d );
+		}
+		for (i = 0; i < 2; i++) {
+			memcpy( buf + bl, subdirs[i], 4 );
+			if (stat( buf, &st )) {
+				sys_error( "Maildir error: cannot re-stat %s", buf );
+				goto rfail;
+			}
+			if (st.st_mtime != stamps[i]) {
+				/* Somebody messed with the mailbox since we started listing it. */
+#ifdef USE_DB
+				if (ctx->db)
+					tdb->close( tdb, 0 );
+#endif /* USE_DB */
+				maildir_free_scan( msglist );
+				goto again;
+			}
 		}
 #ifdef USE_DB
 		if (ctx->db) {
