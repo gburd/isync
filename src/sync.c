@@ -611,6 +611,10 @@ sync_boxes( store_t *ctx[], const char *names[], channel_conf_t *chan,
 		ctx[t]->uidvalidity = -1;
 		set_bad_callback( ctx[t], store_bad, AUX );
 		svars->drv[t] = ctx[t]->conf->driver;
+	}
+	/* Both boxes must be fully set up at this point, so that error exit paths
+	 * don't run into uninitialized variables. */
+	for (t = 0; t < 2; t++) {
 		info( "Selecting %s %s...\n", str_ms[t], ctx[t]->name );
 		DRIVER_CALL(select( ctx[t], (chan->ops[t] & OP_CREATE) != 0, box_selected, AUX ));
 	}
