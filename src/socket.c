@@ -36,17 +36,24 @@
 #include <assert.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stddef.h>
 #include <errno.h>
 #include <string.h>
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
-#ifdef HAVE_SYS_FILIO_H
-# include <sys/filio.h>
-#endif
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+
+enum {
+	SCK_CONNECTING,
+#ifdef HAVE_LIBSSL
+	SCK_STARTTLS,
+#endif
+	SCK_READY
+};
 
 static void
 socket_fail( conn_t *conn )
@@ -54,38 +61,42 @@ socket_fail( conn_t *conn )
 	conn->bad_callback( conn->callback_aux );
 }
 
-static void
-socket_perror( const char *func, conn_t *sock, int ret )
-{
 #ifdef HAVE_LIBSSL
+static int
+ssl_return( const char *func, conn_t *conn, int ret )
+{
 	int err;
 
-	if (sock->ssl) {
-		switch ((err = SSL_get_error( sock->ssl, ret ))) {
-		case SSL_ERROR_SYSCALL:
-		case SSL_ERROR_SSL:
-			if ((err = ERR_get_error()) == 0) {
-				if (ret == 0)
-					error( "SSL_%s: got EOF\n", func );
-				else
-					error( "SSL_%s: %s\n", func, strerror(errno) );
-			} else
-				error( "SSL_%s: %s\n", func, ERR_error_string( err, 0 ) );
-			break;
-		default:
-			error( "SSL_%s: unhandled SSL error %d\n", func, err );
-			break;
+	switch ((err = SSL_get_error( conn->ssl, ret ))) {
+	case SSL_ERROR_NONE:
+		return ret;
+	case SSL_ERROR_WANT_WRITE:
+		conf_fd( conn->fd, POLLIN, POLLOUT );
+		/* fallthrough */
+	case SSL_ERROR_WANT_READ:
+		return 0;
+	case SSL_ERROR_SYSCALL:
+	case SSL_ERROR_SSL:
+		if (!(err = ERR_get_error())) {
+			if (ret == 0)
+				error( "SSL_%s: unexpected EOF\n", func );
+			else
+				error( "SSL_%s: %s\n", func, strerror( errno ) );
+		} else {
+			error( "SSL_%s: %s\n", func, ERR_error_string( err, 0 ) );
 		}
-	} else
-#endif
-	if (ret < 0)
-		perror( func );
+		break;
+	default:
+		error( "SSL_%s: unhandled SSL error %d\n", func, err );
+		break;
+	}
+	if (conn->state == SCK_STARTTLS)
+		conn->callbacks.starttls( 0, conn->callback_aux );
 	else
-		error( "%s: unexpected EOF\n", func );
-	socket_fail( sock );
+		socket_fail( conn );
+	return -1;
 }
 
-#ifdef HAVE_LIBSSL
 /* Some of this code is inspired by / lifted from mutt. */
 
 static int
@@ -245,11 +256,15 @@ init_ssl_ctx( const server_conf_t *conf )
 	return 0;
 }
 
-int
-socket_start_tls( const server_conf_t *conf, conn_t *sock )
+static void start_tls_p2( conn_t * );
+static void start_tls_p3( conn_t *, int );
+
+void
+socket_start_tls( conn_t *conn, void (*cb)( int ok, void *aux ) )
 {
-	int ret;
 	static int ssl_inited;
+
+	conn->callbacks.starttls = cb;
 
 	if (!ssl_inited) {
 		SSL_library_init();
@@ -257,32 +272,68 @@ socket_start_tls( const server_conf_t *conf, conn_t *sock )
 		ssl_inited = 1;
 	}
 
-	if (!conf->SSLContext && init_ssl_ctx( conf ))
-		return 1;
-
-	sock->ssl = SSL_new( ((server_conf_t *)conf)->SSLContext );
-	SSL_set_fd( sock->ssl, sock->fd );
-	if ((ret = SSL_connect( sock->ssl )) <= 0) {
-		socket_perror( "connect", sock, ret );
-		return 1;
+	if (!conn->conf->SSLContext && init_ssl_ctx( conn->conf )) {
+		start_tls_p3( conn, 0 );
+		return;
 	}
 
-	/* verify the server certificate */
-	if (verify_cert( conf, sock ))
-		return 1;
+	conn->ssl = SSL_new( ((server_conf_t *)conn->conf)->SSLContext );
+	SSL_set_fd( conn->ssl, conn->fd );
+	SSL_set_mode( conn->ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER );
+	start_tls_p2( conn );
+}
 
-	info( "Connection is now encrypted\n" );
-	return 0;
+static void
+start_tls_p2( conn_t *conn )
+{
+	switch (ssl_return( "connect", conn, SSL_connect( conn->ssl ) )) {
+	case -1:
+		start_tls_p3( conn, 0 );
+		break;
+	case 0:
+		break;
+	default:
+		/* verify the server certificate */
+		if (verify_cert( conn->conf, conn )) {
+			start_tls_p3( conn, 0 );
+		} else {
+			info( "Connection is now encrypted\n" );
+			start_tls_p3( conn, 1 );
+		}
+		break;
+	}
+}
+
+static void start_tls_p3( conn_t *conn, int ok )
+{
+	conn->state = SCK_READY;
+	conn->callbacks.starttls( ok, conn->callback_aux );
 }
 
 #endif /* HAVE_LIBSSL */
 
-int
-socket_connect( const server_conf_t *conf, conn_t *sock )
+static void socket_fd_cb( int, void * );
+
+static void socket_connected2( conn_t * );
+static void socket_connect_bail( conn_t * );
+
+static void
+socket_close_internal( conn_t *sock )
 {
+	del_fd( sock->fd );
+	close( sock->fd );
+	sock->fd = -1;
+}
+
+void
+socket_connect( conn_t *sock, void (*cb)( int ok, void *aux ) )
+{
+	const server_conf_t *conf = sock->conf;
 	struct hostent *he;
 	struct sockaddr_in addr;
 	int s, a[2];
+
+	sock->callbacks.connect = cb;
 
 	/* open connection to IMAP server */
 	if (conf->tunnel) {
@@ -304,6 +355,10 @@ socket_connect( const server_conf_t *conf, conn_t *sock )
 
 		close( a[0] );
 		sock->fd = a[1];
+
+		fcntl( a[1], F_SETFL, O_NONBLOCK );
+		add_fd( a[1], socket_fd_cb, sock );
+
 	} else {
 		memset( &addr, 0, sizeof(addr) );
 		addr.sin_port = conf->port ? htons( conf->port ) :
@@ -317,7 +372,7 @@ socket_connect( const server_conf_t *conf, conn_t *sock )
 		he = gethostbyname( conf->host );
 		if (!he) {
 			error( "IMAP error: Cannot resolve server '%s'\n", conf->host );
-			return -1;
+			goto bail;
 		}
 		info( "ok\n" );
 
@@ -328,36 +383,87 @@ socket_connect( const server_conf_t *conf, conn_t *sock )
 			perror( "socket" );
 			exit( 1 );
 		}
+		sock->fd = s;
+		fcntl( s, F_SETFL, O_NONBLOCK );
+		add_fd( s, socket_fd_cb, sock );
 
-		infon( "Connecting to %s:%hu... ", inet_ntoa( addr.sin_addr ), ntohs( addr.sin_port ) );
+		infon( "Connecting to %s (%s:%hu) ... ",
+		       conf->host, inet_ntoa( addr.sin_addr ), ntohs( addr.sin_port ) );
 		if (connect( s, (struct sockaddr *)&addr, sizeof(addr) )) {
-			close( s );
-			perror( "connect" );
-			return -1;
+			if (errno != EINPROGRESS) {
+				perror( "connect" );
+				socket_close_internal( sock );
+				goto bail;
+			}
+			conf_fd( s, 0, POLLOUT );
+			sock->state = SCK_CONNECTING;
+			info( "\n" );
+			return;
 		}
 
-		sock->fd = s;
 	}
 	info( "ok\n" );
-	return 0;
+	socket_connected2( sock );
+	return;
+
+  bail:
+	socket_connect_bail( sock );
 }
+
+static void
+socket_connected( conn_t *conn )
+{
+	int soerr;
+	socklen_t selen = sizeof(soerr);
+
+	infon( "Connecting to %s: ", conn->conf->host );
+	if (getsockopt( conn->fd, SOL_SOCKET, SO_ERROR, &soerr, &selen )) {
+		perror( "getsockopt" );
+		exit( 1 );
+	}
+	if (soerr) {
+		errno = soerr;
+		perror( "connect" );
+		socket_close_internal( conn );
+		socket_connect_bail( conn );
+		return;
+	}
+	info( "ok\n" );
+	socket_connected2( conn );
+}
+
+static void
+socket_connected2( conn_t *conn )
+{
+	conf_fd( conn->fd, 0, POLLIN );
+	conn->state = SCK_READY;
+	conn->callbacks.connect( 1, conn->callback_aux );
+}
+
+static void
+socket_connect_bail( conn_t *conn )
+{
+	conn->callbacks.connect( 0, conn->callback_aux );
+}
+
+static void dispose_chunk( conn_t *conn );
 
 void
 socket_close( conn_t *sock )
 {
-	if (sock->fd >= 0) {
-		close( sock->fd );
-		sock->fd = -1;
-	}
+	if (sock->fd >= 0)
+		socket_close_internal( sock );
 #ifdef HAVE_LIBSSL
 	if (sock->ssl) {
 		SSL_free( sock->ssl );
 		sock->ssl = 0;
 	}
 #endif
+	while (sock->write_buf)
+		dispose_chunk( sock );
 }
 
-int
+static void
 socket_fill( conn_t *sock )
 {
 	char *buf;
@@ -366,22 +472,31 @@ socket_fill( conn_t *sock )
 	if (!len) {
 		error( "Socket error: receive buffer full. Probably protocol error.\n" );
 		socket_fail( sock );
-		return -1;
+		return;
 	}
 	assert( sock->fd >= 0 );
 	buf = sock->buf + n;
-	n =
 #ifdef HAVE_LIBSSL
-		sock->ssl ? SSL_read( sock->ssl, buf, len ) :
+	if (sock->ssl) {
+		if ((n = ssl_return( "read", sock, SSL_read( sock->ssl, buf, len ) )) <= 0)
+			return;
+		if (n == len && SSL_pending( sock->ssl ))
+			fake_fd( sock->fd, POLLIN );
+	} else
 #endif
-		read( sock->fd, buf, len );
-	if (n <= 0) {
-		socket_perror( "read", sock, n );
-		return -1;
-	} else {
-		sock->bytes += n;
-		return 0;
+	{
+		if ((n = read( sock->fd, buf, len )) < 0) {
+			perror( "read" );
+			socket_fail( sock );
+			return;
+		} else if (!n) {
+			error( "read: unexpected EOF\n" );
+			socket_fail( sock );
+			return;
+		}
 	}
+	sock->bytes += n;
+	sock->read_callback( sock->callback_aux );
 }
 
 int
@@ -426,40 +541,141 @@ socket_read_line( conn_t *b )
 	return s;
 }
 
-int
-socket_write( conn_t *sock, char *buf, int len, ownership_t takeOwn )
+static int
+do_write( conn_t *sock, char *buf, int len )
 {
 	int n;
 
 	assert( sock->fd >= 0 );
-	n =
 #ifdef HAVE_LIBSSL
-		sock->ssl ? SSL_write( sock->ssl, buf, len ) :
+	if (sock->ssl)
+		return ssl_return( "write", sock, SSL_write( sock->ssl, buf, len ) );
 #endif
-		write( sock->fd, buf, len );
-	if (takeOwn == GiveOwn)
-		free( buf );
-	if (n != len) {
-		socket_perror( "write", sock, n );
-		return -1;
+	n = write( sock->fd, buf, len );
+	if (n < 0) {
+		if (errno != EAGAIN && errno != EWOULDBLOCK) {
+			perror( "write" );
+			socket_fail( sock );
+		} else {
+			n = 0;
+			conf_fd( sock->fd, POLLIN, POLLOUT );
+		}
+	} else if (n != len) {
+		conf_fd( sock->fd, POLLIN, POLLOUT );
 	}
-	return 0;
+	return n;
+}
+
+static void
+dispose_chunk( conn_t *conn )
+{
+	buff_chunk_t *bc = conn->write_buf;
+	if (!(conn->write_buf = bc->next))
+		conn->write_buf_append = &conn->write_buf;
+	if (bc->data != bc->buf)
+		free( bc->data );
+	free( bc );
+}
+
+static int
+do_queued_write( conn_t *conn )
+{
+	buff_chunk_t *bc;
+
+	if (!conn->write_buf)
+		return 0;
+
+	while ((bc = conn->write_buf)) {
+		int n, len = bc->len - conn->write_offset;
+		if ((n = do_write( conn, bc->data + conn->write_offset, len )) < 0)
+			return -1;
+		if (n != len) {
+			conn->write_offset += n;
+			return 0;
+		}
+		conn->write_offset = 0;
+		dispose_chunk( conn );
+	}
+#ifdef HAVE_LIBSSL
+	if (conn->ssl && SSL_pending( conn->ssl ))
+		fake_fd( conn->fd, POLLIN );
+#endif
+	return conn->write_callback( conn->callback_aux );
+}
+
+static void
+do_append( conn_t *conn, char *buf, int len, ownership_t takeOwn )
+{
+	buff_chunk_t *bc;
+
+	if (takeOwn == GiveOwn) {
+		bc = nfmalloc( offsetof(buff_chunk_t, buf) );
+		bc->data = buf;
+	} else {
+		bc = nfmalloc( offsetof(buff_chunk_t, buf) + len );
+		bc->data = bc->buf;
+		memcpy( bc->data, buf, len );
+	}
+	bc->len = len;
+	bc->next = 0;
+	*conn->write_buf_append = bc;
+	conn->write_buf_append = &bc->next;
 }
 
 int
-socket_pending( conn_t *sock )
+socket_write( conn_t *conn, char *buf, int len, ownership_t takeOwn )
 {
-	int num = -1;
+	if (conn->write_buf) {
+		do_append( conn, buf, len, takeOwn );
+		return len;
+	} else {
+		int n = do_write( conn, buf, len );
+		if (n != len && n >= 0) {
+			conn->write_offset = n;
+			do_append( conn, buf, len, takeOwn );
+		} else if (takeOwn) {
+			free( buf );
+		}
+		return n;
+	}
+}
 
-	if (ioctl( sock->fd, FIONREAD, &num ) < 0)
-		return -1;
-	if (num > 0)
-		return num;
+static void
+socket_fd_cb( int events, void *aux )
+{
+	conn_t *conn = (conn_t *)aux;
+
+	if (events & POLLERR) {
+		error( "Unidentified socket error.\n" );
+		socket_fail( conn );
+		return;
+	}
+
+	if (conn->state == SCK_CONNECTING) {
+		socket_connected( conn );
+		return;
+	}
+
+	if (events & POLLOUT)
+		conf_fd( conn->fd, POLLIN, 0 );
+
 #ifdef HAVE_LIBSSL
-	if (sock->ssl)
-		return SSL_pending( sock->ssl );
+	if (conn->state == SCK_STARTTLS) {
+		start_tls_p2( conn );
+		return;
+	}
+	if (conn->ssl) {
+		if (do_queued_write( conn ) < 0)
+			return;
+		socket_fill( conn );
+		return;
+	}
 #endif
-	return 0;
+
+	if ((events & POLLOUT) && do_queued_write( conn ) < 0)
+		return;
+	if (events & POLLIN)
+		socket_fill( conn );
 }
 
 #ifdef HAVE_LIBSSL

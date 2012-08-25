@@ -281,10 +281,8 @@ Use TLSv1 for communication with the IMAP server over SSL?
 \fBPipelineDepth\fR \fIdepth\fR
 Maximum number of IMAP commands which can be simultaneously in flight.
 Setting this to \fI1\fR disables pipelining.
-Setting it to a too big value may deadlock isync.
-Currently, this affects only a few commands.
 This is mostly a debugging only option.
-(Default: \fI50\fR)
+(Default: \fIunlimited\fR)
 ..
 .SS IMAP Stores
 The reference point for relative \fBPath\fRs is whatever the server likes it

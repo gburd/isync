@@ -73,15 +73,36 @@ typedef struct server_conf {
 #endif
 } server_conf_t;
 
+typedef struct buff_chunk {
+	struct buff_chunk *next;
+	char *data;
+	int len;
+	char buf[1];
+} buff_chunk_t;
+
 typedef struct {
+	/* connection */
 	int fd;
+	int state;
+	const server_conf_t *conf; /* needed during connect */
 #ifdef HAVE_LIBSSL
 	SSL *ssl;
 #endif
 
 	void (*bad_callback)( void *aux ); /* async fail while sending or listening */
+	void (*read_callback)( void *aux ); /* data available for reading */
+	int (*write_callback)( void *aux ); /* all *queued* data was sent */
+	union {
+		void (*connect)( int ok, void *aux );
+		void (*starttls)( int ok, void *aux );
+	} callbacks;
 	void *callback_aux;
 
+	/* writing */
+	buff_chunk_t *write_buf, **write_buf_append; /* buffer head & tail */
+	int write_offset; /* offset into buffer head */
+
+	/* reading */
 	int offset; /* start of filled bytes in buffer */
 	int bytes; /* number of filled bytes in buffer */
 	int scanoff; /* offset to continue scanning for newline at, relative to 'offset' */
@@ -335,22 +356,27 @@ extern const char *Home;
 
 /* call this before doing anything with the socket */
 static INLINE void socket_init( conn_t *conn,
+                                const server_conf_t *conf,
                                 void (*bad_callback)( void *aux ),
+                                void (*read_callback)( void *aux ),
+                                int (*write_callback)( void *aux ),
                                 void *aux )
 {
+	conn->conf = conf;
 	conn->bad_callback = bad_callback;
+	conn->read_callback = read_callback;
+	conn->write_callback = write_callback;
 	conn->callback_aux = aux;
 	conn->fd = -1;
+	conn->write_buf_append = &conn->write_buf;
 }
-int socket_connect( const server_conf_t *conf, conn_t *sock );
-int socket_start_tls( const server_conf_t *conf, conn_t *sock );
+void socket_connect( conn_t *conn, void (*cb)( int ok, void *aux ) );
+void socket_start_tls(conn_t *conn, void (*cb)( int ok, void *aux ) );
 void socket_close( conn_t *sock );
-int socket_fill( conn_t *sock );
 int socket_read( conn_t *sock, char *buf, int len ); /* never waits */
 char *socket_read_line( conn_t *sock ); /* don't free return value; never waits */
 typedef enum { KeepOwn = 0, GiveOwn } ownership_t;
 int socket_write( conn_t *sock, char *buf, int len, ownership_t takeOwn );
-int socket_pending( conn_t *sock );
 
 void cram( const char *challenge, const char *user, const char *pass,
            char **_final, int *_finallen );
