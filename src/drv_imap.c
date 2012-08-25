@@ -1671,13 +1671,43 @@ imap_set_flags_p2( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, int resp
 /******************* imap_close *******************/
 
 static void
-imap_close( store_t *ctx,
+imap_close( store_t *gctx,
             void (*cb)( int sts, void *aux ), void *aux )
 {
-	struct imap_cmd_simple *cmd;
+	imap_store_t *ctx = (imap_store_t *)gctx;
 
-	INIT_IMAP_CMD(imap_cmd_simple, cmd, cb, aux)
-	imap_exec( (imap_store_t *)ctx, &cmd->gen, imap_done_simple_box, "CLOSE" );
+	if (CAP(UIDPLUS)) {
+		struct imap_cmd_refcounted_state *sts = imap_refcounted_new_state( cb, aux );
+		message_t *msg, *fmsg, *nmsg;
+		int bl;
+		char buf[1000];
+
+		for (msg = ctx->gen.msgs; ; ) {
+			for (bl = 0; msg && bl < 960; msg = msg->next) {
+				if (!(msg->flags & F_DELETED))
+					continue;
+				if (bl)
+					buf[bl++] = ',';
+				bl += sprintf( buf + bl, "%d", msg->uid );
+				fmsg = msg;
+				for (; (nmsg = msg->next) && (nmsg->flags & F_DELETED); msg = nmsg) {}
+				if (msg != fmsg)
+					bl += sprintf( buf + bl, ":%d", msg->uid );
+			}
+			if (!bl)
+				break;
+			if (imap_exec( ctx, imap_refcounted_new_cmd( sts ), imap_refcounted_done_box,
+			               "UID EXPUNGE %s", buf ) < 0)
+				break;
+		}
+		imap_refcounted_done( sts );
+	} else {
+		/* This is inherently racy: it may cause messages which other clients
+		 * marked as deleted to be expunged without being trashed. */
+		struct imap_cmd_simple *cmd;
+		INIT_IMAP_CMD(imap_cmd_simple, cmd, cb, aux)
+		imap_exec( ctx, &cmd->gen, imap_done_simple_box, "CLOSE" );
+	}
 }
 
 /******************* imap_trash_msg *******************/

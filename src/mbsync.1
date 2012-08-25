@@ -484,13 +484,13 @@ times within a Group.
 .SH INHERENT PROBLEMS
 Changes done after \fBmbsync\fR has retrieved the message list will not be
 synchronised until the next time \fBmbsync\fR is invoked.
-..
-.SH BUGS
-Using \fBTrash\fR on IMAP Stores bears a race condition: messages will be
+.P
+Using \fBTrash\fR on IMAP Stores without the UIDPLUS extension (notably,
+M$ Exchange up to at least 2010) bears a race condition: messages will be
 lost if they are marked as deleted after the message list was retrieved but
-before the mailbox is expunged. This can be fixed by using UID EXPUNGE.
-There is no risk as long as the IMAP mailbox is not simultaneously accessed
-by \fBmbsync\fR and another mail client.
+before the mailbox is expunged.
+There is no risk as long as the IMAP mailbox is accessed by only one client
+(including \fBmbsync\fR) at a time.
 ..
 .SH FILES
 .TP
