@@ -146,7 +146,7 @@ typedef struct {
 	channel_conf_t *chan;
 	store_t *ctx[2];
 	driver_t *drv[2];
-	int state[2], ref_count, ret, lfd;
+	int state[2], ref_count, nsrecs, ret, lfd;
 	int new_total[2], new_done[2];
 	int flags_total[2], flags_done[2];
 	int trash_total[2], trash_done[2];
@@ -754,6 +754,7 @@ box_selected( int sts, void *aux )
 			srec->next = 0;
 			*svars->srecadd = srec;
 			svars->srecadd = &srec->next;
+			svars->nsrecs++;
 		}
 		fclose( jfp );
 	} else {
@@ -817,6 +818,7 @@ box_selected( int sts, void *aux )
 					srec->next = 0;
 					*svars->srecadd = srec;
 					svars->srecadd = &srec->next;
+					svars->nsrecs++;
 				} else {
 					for (nsrec = srec; srec; srec = srec->next)
 						if (srec->uid[M] == t1 && srec->uid[S] == t2)
@@ -1001,6 +1003,11 @@ typedef struct {
 	int aflags, dflags;
 } flag_vars_t;
 
+typedef struct {
+	int uid;
+	sync_rec_t *srec;
+} sync_rec_map_t;
+
 static void flags_set_del( int sts, void *aux );
 static void flags_set_sync( int sts, void *aux );
 static void flags_set_sync_p2( sync_vars_t *svars, sync_rec_t *srec, int t );
@@ -1013,13 +1020,14 @@ static void
 box_loaded( int sts, void *aux )
 {
 	DECL_SVARS;
-	sync_rec_t *srec, *nsrec = 0;
+	sync_rec_t *srec;
+	sync_rec_map_t *srecmap;
 	message_t *tmsg;
 	copy_vars_t *cv;
 	flag_vars_t *fv;
-	const char *diag;
 	int uid, minwuid, *mexcs, nmexcs, rmexcs, no[2], del[2], todel, t1, t2;
 	int sflags, nflags, aflags, dflags, nex;
+	unsigned hashsz, idx;
 	char fbuf[16]; /* enlarge when support for keywords is added */
 
 	if (check_ret( sts, aux ))
@@ -1035,13 +1043,20 @@ box_loaded( int sts, void *aux )
 	}
 	Fprintf( svars->jfp, "%c %d\n", "{}"[t], svars->ctx[t]->uidnext );
 
-	/*
-	 * Mapping tmsg -> srec (this variant) is dog slow for new messages.
-	 * Mapping srec -> tmsg is dog slow for deleted messages.
-	 * One solution would be using binary search on an index array.
-	 * msgs are already sorted by UID, srecs would have to be sorted by uid[t].
-	 */
 	debug( "matching messages on %s against sync records\n", str_ms[t] );
+	hashsz = bucketsForSize( svars->nsrecs * 3 );
+	srecmap = nfcalloc( hashsz * sizeof(*srecmap) );
+	for (srec = svars->srecs; srec; srec = srec->next) {
+		if (srec->status & S_DEAD)
+			continue;
+		uid = srec->uid[t];
+		idx = (unsigned)((unsigned)uid * 1103515245U) % hashsz;
+		while (srecmap[idx].uid)
+			if (++idx == hashsz)
+				idx = 0;
+		srecmap[idx].uid = uid;
+		srecmap[idx].srec = srec;
+	}
 	for (tmsg = svars->ctx[t]->msgs; tmsg; tmsg = tmsg->next) {
 		if (tmsg->srec) /* found by TUID */
 			continue;
@@ -1050,21 +1065,14 @@ box_loaded( int sts, void *aux )
 			make_flags( tmsg->flags, fbuf );
 			printf( svars->ctx[t]->opts & OPEN_SIZE ? "  message %5d, %-4s, %6lu: " : "  message %5d, %-4s: ", uid, fbuf, tmsg->size );
 		}
-		for (srec = nsrec; srec; srec = srec->next) {
-			if (srec->status & S_DEAD)
-				continue;
-			if (srec->uid[t] == uid) {
-				diag = srec == nsrec ? "adjacently" : "after gap";
+		idx = (unsigned)((unsigned)uid * 1103515245U) % hashsz;
+		while (srecmap[idx].uid) {
+			if (srecmap[idx].uid == uid) {
+				srec = srecmap[idx].srec;
 				goto found;
 			}
-		}
-		for (srec = svars->srecs; srec != nsrec; srec = srec->next) {
-			if (srec->status & S_DEAD)
-				continue;
-			if (srec->uid[t] == uid) {
-				diag = "after reset";
-				goto found;
-			}
+			if (++idx == hashsz)
+				idx = 0;
 		}
 		tmsg->srec = 0;
 		debug( "new\n" );
@@ -1072,9 +1080,9 @@ box_loaded( int sts, void *aux )
 	  found:
 		tmsg->srec = srec;
 		srec->msg[t] = tmsg;
-		nsrec = srec->next;
-		debug( "pairs %5d %s\n", srec->uid[1-t], diag );
+		debug( "pairs %5d\n", srec->uid[1-t] );
 	}
+	free( srecmap );
 
 	if ((t == S) && svars->smaxxuid) {
 		debug( "preparing master selection - max expired slave uid is %d\n", svars->smaxxuid );
@@ -1164,6 +1172,7 @@ box_loaded( int sts, void *aux )
 						srec->next = 0;
 						*svars->srecadd = srec;
 						svars->srecadd = &srec->next;
+						svars->nsrecs++;
 						srec->status = S_DONE;
 						srec->flags = 0;
 						srec->tuid[0] = 0;

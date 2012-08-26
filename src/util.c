@@ -475,6 +475,24 @@ arc4_getbyte( void )
 	return rs.s[(si + sj) & 0xff];
 }
 
+static const unsigned char prime_deltas[] = {
+    0,  0,  1,  3,  1,  5,  3,  3,  1,  9,  7,  5,  3,  9, 25,  3,
+    1, 21,  3, 21,  7, 15,  9,  5,  3, 29, 15,  0,  0,  0,  0,  0
+};
+
+int
+bucketsForSize( int size )
+{
+	int base = 4, bits = 2;
+
+	for (;;) {
+		int prime = base + prime_deltas[bits];
+		if (prime >= size)
+			return prime;
+		base <<= 1;
+		bits++;
+	}
+}
 
 #ifdef HAVE_SYS_POLL_H
 static struct pollfd *pollfds;

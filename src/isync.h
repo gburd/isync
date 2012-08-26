@@ -442,6 +442,8 @@ void sort_ints( int *arr, int len );
 void arc4_init( void );
 unsigned char arc4_getbyte( void );
 
+int bucketsForSize( int size );
+
 #ifdef HAVE_SYS_POLL_H
 # include <sys/poll.h>
 #else
