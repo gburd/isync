@@ -5,4 +5,8 @@ isync_LDADD = -ldb
 noinst_HEADERS = isync.h
 
 man_MANS = isync.1
-EXTRA_DIST = isyncrc.sample $(man_MANS)
+
+exampledir = $(docdir)/examples
+example_DATA = isyncrc.sample
+
+EXTRA_DIST = $(example_DATA) $(man_MANS)

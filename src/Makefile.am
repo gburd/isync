@@ -13,4 +13,8 @@ mdconvert_SOURCES = mdconvert.c
 mdconvert_LDADD = -ldb
 
 man_MANS = mbsync.1 mdconvert.1
-EXTRA_DIST = run-tests.pl mbsyncrc.sample $(man_MANS)
+
+exampledir = $(docdir)/examples
+example_DATA = mbsyncrc.sample
+
+EXTRA_DIST = run-tests.pl $(example_DATA) $(man_MANS)
