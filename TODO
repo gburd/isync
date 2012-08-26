@@ -1,32 +1,31 @@
-have a look at libpathfinder.
-
 find out why mutt's message size calc is confused.
 
 add some marker about message being already [remotely] trashed.
 real transactions would be certainly not particularly useful ...
 
-!srec->msg[t] || (srec->msg[t]->status & M_DEAD)
+check whether disappearing (M_DEAD) messages (due to maildir rescans) are
+properly accounted for by the syncing code.
 
-use UID EXPUNGE! (rfc4315 (obsoletes rfc2359))
+make sync_chans() aware of servers, so a bad server (e.g., wrong password)
+won't cause the same error message for every attached store.
 
-quotas are weird, they make close() fail.
+make SSL (connect) timeouts produce a bit more than "Unidentified socket error".
 
-clarify error cases of transactions.
+network timeout handling in general would be a good idea.
 
-clarify UID 0 vs. < 0 returns vor store_msg & find_msg.
+unify maildir locking between the two UID storage schemes.
+re-opening the db may be expensive, so keep it open.
+but keeping lock for too long (e.g., big message downloads) may block other
+clients. auto-release lock after 500 ms?
 
-create dbg_srec(srec, fmt, ...).
-
-
-make SSL certificate validation more automatic.
-
-allow excluding particular boxes from a wildcard spec.
+kill the concept of an INBOX, it is a relic from single-channel operation.
+if somebody needs it, he can have two stores with different Paths. the path
+can name a single (in-)box (curr. broken with maildir). an empty box name
+actually means empty, so the IMAP mailbox should use INBOX for Path (can't
+make that the default, as it would mess up the NAMESPACE).
 
 add daemon mode. primary goal: keep imap password in memory.
 also: idling mode.
-
-add asynchronous operation to remote mailbox drivers. this is actually
-what prevents us from simply using c-client and thus becoming mailsync.
 
 parallel fetching of multiple mailboxes.
 
@@ -39,9 +38,7 @@ add streaming from fetching to storing.
 
 handle custom flags (keywords).
 
-fix maildir_{open_store,list} to handle partial names (last char not slash).
-
-add a way to automatically create and sync subfolders.
+handle google IMAP extensions.
 
 use MULTIAPPEND and FETCH with multiple messages.
 

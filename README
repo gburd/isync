@@ -34,7 +34,7 @@ isync executable still exists; it is a compatibility wrapper around mbsync.
 	* Supports TLS/SSL via imaps: (port 993) and STARTTLS (RFC2595)
 	* Supports CRAM-MD5 (RFC2195) for authentication
 	* Supports NAMESPACE (RFC2342) for simplified configuration
-	* Pipelining for maximum speed (currently only partially implemented)
+	* Pipelining for maximum speed
 
 * Compatibility
 

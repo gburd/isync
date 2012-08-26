@@ -1,3 +1,15 @@
+[1.1.0]
+
+Support for hierarchical mailboxes in Patterns.
+
+Full support for IMAP pipelining (streaming, parallelization) added.
+This is considerably faster especially with high-latency networks.
+
+Faster and hopefully more reliable support for IMAP servers without the
+UIDPLUS extension (e.g., M$ Exchange).
+
+More automatic handling of SSL certificates.
+
 [1.0.0]
 
 Essentially a rewrite. Synchronization state storage concept, configuration
