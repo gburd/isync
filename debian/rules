@@ -1,7 +1,5 @@
 #!/usr/bin/make -f
 
-PACKAGE=isync
-
 CFLAGS = -Wall -g
 ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
 CFLAGS += -O0
@@ -13,18 +11,17 @@ DEB_HOST_GNU_TYPE := $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
 DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
 
 build: build-stamp
-build-stamp: patch-stamp
+build-stamp:
 	dh_testdir
-	./configure --disable-maintainer-mode --build=$(DEB_BUILD_GNU_TYPE) --host=$(DEB_HOST_GNU_TYPE) --prefix=/usr --mandir=/usr/share/man 
+	./configure --build=$(DEB_BUILD_GNU_TYPE) --host=$(DEB_HOST_GNU_TYPE) --prefix=/usr --mandir=/usr/share/man 
 	$(MAKE) CFLAGS="$(CFLAGS)"
 	touch build-stamp
 
-clean: clean1 unpatch
-clean1:
+clean:
 	dh_testdir
 	dh_testroot
 	rm -f build-stamp
-	-$(MAKE) distclean
+	[ ! -f Makefile ] || $(MAKE) distclean
 	dh_clean Makefile config.log config.status
 
 install: build
@@ -33,6 +30,8 @@ install: build
 	dh_clean -k
 	dh_installdirs usr/bin usr/share/man/man1
 	$(MAKE) DESTDIR=$(CURDIR)/debian/isync install
+	rm -r $(CURDIR)/debian/isync/usr/share/doc
+	mv $(CURDIR)/debian/isync/usr/bin/get-cert $(CURDIR)/debian/isync/usr/bin/mbsync-get-cert
 
 binary-indep: build install
 
@@ -53,6 +52,4 @@ binary-arch: build install
 	dh_builddeb
 
 binary: binary-indep binary-arch
-.PHONY: build clean binary-indep binary-arch binary install clean1
-
-include /usr/share/dpatch/dpatch.make
+.PHONY: build clean binary-indep binary-arch binary install

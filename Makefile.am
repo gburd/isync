@@ -54,18 +54,16 @@ log:
 	   git log --date=iso --log-size --name-only | \
 	     perl -e '$(LOG_PL)' > ChangeLog )
 
-deb:
-	CFLAGS="-O2 -mcpu=i686" fakeroot debian/rules binary
+deb: deb-clean
+	CFLAGS= fakeroot debian/rules binary
 
 deb-clean:
-	cd $(srcdir) && \
-	 dh_clean -Xsrc/ && \
-	 fakeroot debian/rules unpatch
-
-distdir distclean: deb-clean
+	dh_clean -Xsrc/
+	fakeroot debian/rules clean
 
 dist-hook:
-	find $(distdir)/debian \( -name .git -o -name .gitignore -o -name .#\*# -o -type l \) -print0 | xargs -0r rm -rf
+	find $(distdir)/debian \( -name .#\*# -o -type l \) -print0 | xargs -0r rm -rf
+	-cd $(distdir)/debian && test -f .gitignore && rm -rf `cat .gitignore` .gitignore
 
 dist-sign: dist
 	gpg -b -a $(PACKAGE)-$(VERSION).tar.gz

@@ -23,8 +23,8 @@ if [ "$OLDVERSION" != "$VERSION" ]; then
 	sed -e s/+cvsXXXXXXXX/+cvs${DATE}/ < debian/changelog > debian/changelog.new
 	mv debian/changelog.new debian/changelog
 fi 
-find . -name CVS -print0 | xargs -0r rm -rf
-find . -name .cvsignore -print0 | xargs -0r rm
+find . -name .git -print0 | xargs -0r rm -rf
+find . -name .gitignore -print0 | xargs -0r rm
 find . -type l -print0 | xargs -0r rm
 find . -name .#\*#  -print0 | xargs -0r rm
 aclocal

@@ -1,2 +1,2 @@
-version=2
-http://sourceforge.net/project/showfiles.php?group_id=69662 .*/isync-(.*).tar.gz.*
+version=3
+http://sf.net/isync/ isync-(.*)\.tar\.gz debian uupdate

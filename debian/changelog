@@ -1,13 +1,140 @@
-isync (0.9.2+cvsXXXXXXXX-1) unstable; urgency=low
+isync (1.0.4-2.1) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Drop debconf note that deals with a pre-Etch transition.
+    Closes: #492194
+
+ -- Christian Perrier <bubulle@debian.org>  Sat, 25 Oct 2008 08:40:52 +0200
+
+isync (1.0.4-2) unstable; urgency=low
+
+  * Change the libdb4.4-dev build-dependency to libdb-dev. Thanks Luk for
+    pointing this. (Closes: #499165)
+
+ -- Nicolas Boullis <nboullis@debian.org>  Wed, 17 Sep 2008 23:58:58 +0200
+
+isync (1.0.4-1) unstable; urgency=low
+
+  * The second "thanks Christian" release.
+  * New upstream release.
+    - Accept empty "* SEARCH" response. (Closes: #413336)
+    - Quote user name in generated config. (Closes: #456783)
+  * Explain the isync->mbsync change in the package description.
+    (Closes: #430648) 
+  * Fix the debian/watch file that lacked the version and action fields.
+  * Disable the upstream "deb-clean" stuff in the top-level Makefile, as
+    in breaks cleaning the build directory.
+  * Bump Standards-Version to 3.7.3. (No change required.)
+
+ -- Nicolas Boullis <nboullis@debian.org>  Sat, 03 May 2008 01:42:55 +0200
+
+isync (1.0.3-3.1) unstable; urgency=low
+
+  * Non-maintainer upload to fix pending l10n issues.
+  * Debconf translations:
+    - Portuguese. Closes: #418283
+    - Italian. Closes: #418246
+    - Dutch. Closes: #422244
+    - Spanish. Closes: #426184
+    - Finnish. Closes: #468214
+    - Galician. Closes: #470529
+  * [Lintian] Do not include debian revision in the build dependency for
+    libssl-dev
+  * [Lintian] No longer ignore errors from "make distclean"
+
+ -- Christian Perrier <bubulle@debian.org>  Wed, 12 Mar 2008 07:24:01 +0100
+
+isync (1.0.3-3) unstable; urgency=low
+
+  * The "thanks Christian" release.
+  * Update German debconf templates translation. Thanks to Erik Schanze
+    (for the translation) and Christian Perrier (for forwarding the
+    translation). (Closes: #407615)
+
+ -- Nicolas Boullis <nboullis@debian.org>  Mon,  5 Feb 2007 00:17:15 +0100
+
+isync (1.0.3-2.1) unstable; urgency=low
+
+  * Non-maintainer upload with maintainer's permission
+  * Debconf templates translations:
+    - French updated by me
+    - Brazilian Portuguese translation added
+    - Czech translation added. Closes: #403473
+    - Russian translation added. Closes: #403510
+    - Vietnamese translation added
+    - Norwegian Bokmål translation added. Closes: #403523
+
+ -- Christian Perrier <bubulle@debian.org>  Sun, 17 Dec 2006 15:31:04 +0100
+
+isync (1.0.3-2) unstable; urgency=low
+
+  * Back to unstable, with permission from Steve Langasek. (Message-ID:
+    <20061121015225.GF28035@borges.dodds.net>)
+  * Rewrite the debconf note, thanks to the debian-l10n-english team (and
+    especially MJ Ray).
+  * Also add some information about the new version into NEWS.Debian.
+  * Remove the information about the need to set the T (trashed) flag from
+    README.Debian.
+  * Also install the isyncrc.sample sample configuration file.
+  * Bump Standards-Version to 3.7.2. (No change required.)
+
+ -- Nicolas Boullis <nboullis@debian.org>  Tue,  5 Dec 2006 00:34:54 +0100
+
+isync (1.0.3-1) experimental; urgency=low
+
+  * New upstream release. (Closes: #315423)
+    - Isync now supports breaking and linking threads. (Closes: #177280)
+    - It also supports unflagging messages. (Closes: #111286)
+    - IMAP commands are sent asynchronously. (Closes: #226222)
+  * Kill the old debconf question about upgrades from pre-0.8 versions.
+  * Use the (now obsolete) swedish and portugese translations anyway.
+    (Closes: #337771, #378891)
+  * New debconf note that warns about upgrades from pre-1.0 versions.
+  * Add a build dependency on po-debconf.
+
+ -- Nicolas Boullis <nboullis@debian.org>  Sun, 19 Nov 2006 15:04:31 +0100
+
+isync (0.9.2-4) unstable; urgency=low
+
+  * Add Czech debconf translation, thanks to Martin Šín. (Closes: #317571)
+  * Build with the newest libssl-dev.
+  * Load the debconf library in postinst to ensure that everything works
+    as expected, thanks to lintian for noticing the problem and to
+    Josselin Mouette for pointing to the right doc.
+  * Fix a bashism in the config script, thanks to lintian.
+  * Update the postal address of the FSF in the copyright file.
+  * Bump Standards-Version to 3.6.2. (No change required.)
+
+ -- Nicolas Boullis <nboullis@debian.org>  Mon, 10 Oct 2005 01:37:50 +0200
+
+isync (0.9.2-3) unstable; urgency=low
+
+  * Bump build-dependency from libdb4.0-dev to libdb4.2-dev, thanks to
+    Andreas Jochens. (Closes: #280268)
+
+ -- Nicolas Boullis <nboullis@debian.org>  Tue,  9 Nov 2004 18:21:12 +0100
+
+isync (0.9.2-2) unstable; urgency=low
+
+  * Add german debconf templates translation, thanks to Erik Schanze.
+    (Closes: #267675)
+
+ -- Nicolas Boullis <nboullis@debian.org>  Tue, 24 Aug 2004 00:32:32 +0200
+
+isync (0.9.2-1) unstable; urgency=low
 
   * New upstream release.
-       - Password prompt now includes the mailbox/server (Closes: #92893)
-  * Theodore Ts'o added as co-maintainer
-  * Added initial asynchronous flags synchronization patch (Closes: #226222)
-  * Ignore anything that does not look remotely like a maildir when
-    collecting mailboxes for OneToOne (from isync CVS)
+    - Password prompt now includes the mailbox/server. (Closes: #92893)
+  * Backported from CVS:
+    - A few prinf converted to info (disabled with -q).
+    - A few other printf converted to warn (disabled with -q -q) to be
+      able to disable the warning when SSL is not available.
+      (Closes: #228086) 
+    - Update the manpage accordingly (about -q).
+    - Improve the manpage (about using isync with mutt).
+  * Add Theodore Y. Ts'o as a co-maintainter.
 
- -- Theodore Y. Ts'o <tytso@mit.edu>  Sun, 11 Jan 2004 02:38:48 -0500
+ -- Nicolas Boullis <nboullis@debian.org>  Tue, 13 Apr 2004 02:12:42 +0200
 
 isync (0.9.1-4) unstable; urgency=low
 
