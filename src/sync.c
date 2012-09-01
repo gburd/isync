@@ -419,7 +419,7 @@ stats( sync_vars_t *svars )
 			if (l > cols)
 				buf[t][cols - 1] = '~';
 		}
-		infon( "\rM: %.*s  S: %.*s", cols, buf[0], cols, buf[1] );
+		infon( "\v\rM: %.*s  S: %.*s", cols, buf[0], cols, buf[1] );
 	}
 }
 

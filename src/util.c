@@ -43,6 +43,17 @@ flushn( void )
 	}
 }
 
+static void
+printn( const char *msg, va_list va )
+{
+	if (*msg == '\v')
+		msg++;
+	else
+		flushn();
+	vprintf( msg, va );
+	fflush( stdout );
+}
+
 void
 debug( const char *msg, ... )
 {
@@ -78,9 +89,8 @@ info( const char *msg, ... )
 
 	if (!(DFlags & QUIET)) {
 		va_start( va, msg );
-		vprintf( msg, va );
+		printn( msg, va );
 		va_end( va );
-		fflush( stdout );
 		need_nl = 0;
 	}
 }
@@ -92,9 +102,8 @@ infon( const char *msg, ... )
 
 	if (!(DFlags & QUIET)) {
 		va_start( va, msg );
-		vprintf( msg, va );
+		printn( msg, va );
 		va_end( va );
-		fflush( stdout );
 		need_nl = 1;
 	}
 }

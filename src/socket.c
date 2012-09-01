@@ -374,7 +374,7 @@ socket_connect( conn_t *sock, void (*cb)( int ok, void *aux ) )
 			error( "IMAP error: Cannot resolve server '%s'\n", conf->host );
 			goto bail;
 		}
-		info( "ok\n" );
+		info( "\vok\n" );
 
 		addr.sin_addr.s_addr = *((int *)he->h_addr_list[0]);
 
@@ -398,12 +398,12 @@ socket_connect( conn_t *sock, void (*cb)( int ok, void *aux ) )
 			}
 			conf_fd( s, 0, POLLOUT );
 			sock->state = SCK_CONNECTING;
-			info( "\n" );
+			info( "\v\n" );
 			return;
 		}
 
 	}
-	info( "ok\n" );
+	info( "\vok\n" );
 	socket_connected2( sock );
 	return;
 
