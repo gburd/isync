@@ -35,7 +35,6 @@
 #include <dirent.h>
 
 #ifdef HAVE_GETOPT_LONG
-# define _GNU_SOURCE
 # include <getopt.h>
 struct option Opts[] = {
 	{"write", 0, NULL, 'w' },

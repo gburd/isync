@@ -21,8 +21,6 @@
  * despite that library's more restrictive license.
  */
 
-#define _GNU_SOURCE
-
 #include <config.h>
 
 #include <sys/types.h>
