@@ -278,6 +278,7 @@ socket_start_tls( conn_t *conn, void (*cb)( int ok, void *aux ) )
 	conn->ssl = SSL_new( ((server_conf_t *)conn->conf)->SSLContext );
 	SSL_set_fd( conn->ssl, conn->fd );
 	SSL_set_mode( conn->ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER );
+	conn->state = SCK_STARTTLS;
 	start_tls_p2( conn );
 }
 
