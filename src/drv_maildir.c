@@ -42,6 +42,10 @@
 # define LEGACY_FLOCK 1
 #endif
 
+#ifndef _POSIX_SYNCHRONIZED_IO
+# define fdatasync fsync
+#endif
+
 #ifdef USE_DB
 #include <db.h>
 #endif /* USE_DB */
@@ -428,7 +432,7 @@ maildir_store_uid( maildir_store_t *ctx )
 
 	n = sprintf( buf, "%d\n%d\n", ctx->gen.uidvalidity, ctx->nuid );
 	lseek( ctx->uvfd, 0, SEEK_SET );
-	if (write( ctx->uvfd, buf, n ) != n || ftruncate( ctx->uvfd, n )) {
+	if (write( ctx->uvfd, buf, n ) != n || ftruncate( ctx->uvfd, n ) || fdatasync( ctx->uvfd )) {
 		error( "Maildir error: cannot write UIDVALIDITY.\n" );
 		return DRV_BOX_BAD;
 	}
