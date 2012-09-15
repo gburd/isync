@@ -412,8 +412,6 @@ void ATTR_PRINTFLIKE(1, 2) error( const char *, ... );
 void ATTR_PRINTFLIKE(1, 2) sys_error( const char *, ... );
 void flushn( void );
 
-char *next_arg( char ** );
-
 void add_string_list( string_list_t **list, const char *str );
 void free_string_list( string_list_t *list );
 

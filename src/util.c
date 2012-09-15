@@ -28,7 +28,6 @@
 #include <fcntl.h>
 #include <string.h>
 #include <pwd.h>
-#include <ctype.h>
 
 int DFlags;
 static int need_nl;
@@ -143,37 +142,6 @@ sys_error( const char *msg, ... )
 		oob();
 	va_end( va );
 	perror( buf );
-}
-
-char *
-next_arg( char **s )
-{
-	char *ret;
-
-	if (!s || !*s)
-		return 0;
-	while (isspace( (unsigned char) **s ))
-		(*s)++;
-	if (!**s) {
-		*s = 0;
-		return 0;
-	}
-	if (**s == '"') {
-		++*s;
-		ret = *s;
-		*s = strchr( *s, '"' );
-	} else {
-		ret = *s;
-		while (**s && !isspace( (unsigned char) **s ))
-			(*s)++;
-	}
-	if (*s) {
-		if (**s)
-			*(*s)++ = 0;
-		if (!**s)
-			*s = 0;
-	}
-	return ret;
 }
 
 void

@@ -450,6 +450,37 @@ imap_refcounted_done_box( imap_store_t *ctx ATTR_UNUSED, struct imap_cmd *cmd, i
 	imap_refcounted_done( sts );
 }
 
+static char *
+next_arg( char **s )
+{
+	char *ret;
+
+	if (!s || !*s)
+		return 0;
+	while (isspace( (unsigned char) **s ))
+		(*s)++;
+	if (!**s) {
+		*s = 0;
+		return 0;
+	}
+	if (**s == '"') {
+		++*s;
+		ret = *s;
+		*s = strchr( *s, '"' );
+	} else {
+		ret = *s;
+		while (**s && !isspace( (unsigned char) **s ))
+			(*s)++;
+	}
+	if (*s) {
+		if (**s)
+			*(*s)++ = 0;
+		if (!**s)
+			*s = 0;
+	}
+	return ret;
+}
+
 static int
 is_atom( list_t *list )
 {

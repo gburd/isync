@@ -22,10 +22,12 @@
 
 #include "isync.h"
 
+#include <assert.h>
 #include <unistd.h>
 #include <limits.h>
 #include <pwd.h>
 #include <sys/types.h>
+#include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -37,6 +39,46 @@ channel_conf_t *channels;
 group_conf_t *groups;
 int global_ops[2];
 char *global_sync_state;
+
+#define ARG_OPTIONAL 0
+#define ARG_REQUIRED 1
+
+static char *
+get_arg( conffile_t *cfile, int required, int *comment )
+{
+	char *ret, *p, *t;
+	int quoted;
+	char c;
+
+	p = cfile->rest;
+	assert( p );
+	while ((c = *p) && isspace( (unsigned char) c ))
+		p++;
+	if (!c || c == '#') {
+		if (comment)
+			*comment = (c == '#');
+		if (required)
+			error( "%s:%d: parameter missing\n", cfile->file, cfile->line );
+		ret = 0;
+	} else {
+		for (quoted = 0, ret = t = p; c; c = *p) {
+			p++;
+			if (c == '"')
+				quoted ^= 1;
+			else if (!quoted && isspace( (unsigned char) c ))
+				break;
+			else
+				*t++ = c;
+		}
+		*t = 0;
+		if (quoted) {
+			error( "%s:%d: missing closing quote\n", cfile->file, cfile->line );
+			ret = 0;
+		}
+	}
+	cfile->rest = p;
+	return ret;
+}
 
 int
 parse_bool( conffile_t *cfile )
@@ -132,7 +174,7 @@ getopt_helper( conffile_t *cfile, int *cops, int ops[], char **sync_state )
 			else if (strcasecmp( "None", arg ) && strcasecmp( "Noop", arg ))
 				error( "%s:%d: invalid Sync arg '%s'\n",
 				       cfile->file, cfile->line, arg );
-		while ((arg = next_arg( &cfile->rest )));
+		while ((arg = get_arg( cfile, ARG_OPTIONAL, 0 )));
 		ops[M] |= XOP_HAVE_TYPE;
 	} else if (!strcasecmp( "Expunge", cfile->cmd )) {
 		arg = cfile->val;
@@ -146,7 +188,7 @@ getopt_helper( conffile_t *cfile, int *cops, int ops[], char **sync_state )
 			else if (strcasecmp( "None", arg ))
 				error( "%s:%d: invalid Expunge arg '%s'\n",
 				       cfile->file, cfile->line, arg );
-		while ((arg = next_arg( &cfile->rest )));
+		while ((arg = get_arg( cfile, ARG_OPTIONAL, 0 )));
 		ops[M] |= XOP_HAVE_EXPUNGE;
 	} else if (!strcasecmp( "Create", cfile->cmd )) {
 		arg = cfile->val;
@@ -160,7 +202,7 @@ getopt_helper( conffile_t *cfile, int *cops, int ops[], char **sync_state )
 			else if (strcasecmp( "None", arg ))
 				error( "%s:%d: invalid Create arg '%s'\n",
 				       cfile->file, cfile->line, arg );
-		while ((arg = next_arg( &cfile->rest )));
+		while ((arg = get_arg( cfile, ARG_OPTIONAL, 0 )));
 		ops[M] |= XOP_HAVE_CREATE;
 	} else if (!strcasecmp( "SyncState", cfile->cmd ))
 		*sync_state = expand_strdup( cfile->val );
@@ -172,20 +214,18 @@ getopt_helper( conffile_t *cfile, int *cops, int ops[], char **sync_state )
 int
 getcline( conffile_t *cfile )
 {
-	char *p;
+	int comment;
 
 	while (fgets( cfile->buf, cfile->bufl, cfile->fp )) {
 		cfile->line++;
-		p = cfile->buf;
-		if (!(cfile->cmd = next_arg( &p )))
+		cfile->rest = cfile->buf;
+		if (!(cfile->cmd = get_arg( cfile, ARG_OPTIONAL, &comment ))) {
+			if (comment)
+				continue;
 			return 1;
-		if (*cfile->cmd == '#')
-			continue;
-		if (!(cfile->val = next_arg( &p ))) {
-			error( "%s:%d: parameter missing\n", cfile->file, cfile->line );
-			continue;
 		}
-		cfile->rest = p;
+		if (!(cfile->val = get_arg( cfile, ARG_REQUIRED, 0 )))
+			continue;
 		return 1;
 	}
 	return 0;
@@ -311,7 +351,7 @@ load_config( const char *where, int pseudo )
 					arg = cfile.val;
 					do
 						add_string_list( &channel->patterns, arg );
-					while ((arg = next_arg( &cfile.rest )));
+					while ((arg = get_arg( &cfile, ARG_OPTIONAL, 0 )));
 				}
 				else if (!strcasecmp( "Master", cfile.cmd )) {
 					ms = M;
@@ -367,8 +407,7 @@ load_config( const char *where, int pseudo )
 			*groupapp = 0;
 			chanlistapp = &group->channels;
 			*chanlistapp = 0;
-			p = cfile.rest;
-			while ((arg = next_arg( &p ))) {
+			while ((arg = get_arg( &cfile, ARG_OPTIONAL, 0 ))) {
 			  addone:
 				len = strlen( arg );
 				chanlist = nfmalloc( sizeof(*chanlist) + len );
@@ -383,7 +422,6 @@ load_config( const char *where, int pseudo )
 				if (!strcasecmp( "Channel", cfile.cmd ) ||
 				    !strcasecmp( "Channels", cfile.cmd ))
 				{
-					p = cfile.rest;
 					arg = cfile.val;
 					goto addone;
 				}
