@@ -481,6 +481,12 @@ extern group_conf_t *groups;
 extern int global_ops[2];
 extern char *global_sync_state;
 
+#define FSYNC_NONE     0
+#define FSYNC_NORMAL   1
+#define FSYNC_THOROUGH 2
+
+extern int FSyncLevel;
+
 int parse_bool( conffile_t *cfile );
 int parse_int( conffile_t *cfile );
 int parse_size( conffile_t *cfile );

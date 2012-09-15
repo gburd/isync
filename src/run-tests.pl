@@ -256,7 +256,9 @@ sub writecfg($$$)
 	open(FILE, ">", ".mbsyncrc") or
 		die "Cannot open .mbsyncrc.\n";
 	print FILE
-"MaildirStore master
+"FSync None
+
+MaildirStore master
 Path ./
 Inbox ./master
 ".shift()."

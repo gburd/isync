@@ -20,7 +20,7 @@
 \" As a special exception, mbsync may be linked with the OpenSSL library,
 \" despite that library's more restrictive license.
 ..
-.TH mbsync 1 "2012 Aug 25"
+.TH mbsync 1 "2012 Sep 15"
 ..
 .SH NAME
 mbsync - synchronize IMAP4 and Maildir mailboxes
@@ -476,6 +476,26 @@ line, except that there newlines can be used as mailbox name separators as well.
 \fBChannel\fR[\fBs\fR] \fIchannel\fR[\fB:\fIbox\fR[\fB,\fR...]] ...
 Add the specified channels to the group. This option can be specified multiple
 times within a Group.
+..
+.SS Global Options
+.TP
+\fBFSync\fR {\fINone\fR|\fINormal\fR|\fIThorough\fR}
+.br
+Select the amount of forced flushing \fBmbsync\fR performs, which determines
+the level of data safety after system crashes and power outages:
+.br
+\fBNone\fR - no flushing at all. This is reasonably safe for file systems
+which are mounted with data=ordered mode.
+.br
+\fBNormal\fR - message and critical metadata writes are flushed. No data
+should be lost due to crashes, though it is still possible that messages
+are duplicated after crashes. This is the default, and is a wise choice for
+file systems mounted with data=writeback, in particular modern systems like
+ext4, btrfs and xfs. The performance impact on older file systems may be
+disproportionate.
+.br
+\fBThorough\fR - this avoids message duplication after crashes as well,
+at some additional performance cost.
 ..
 .SH SSL CERTIFICATES
 [to be done]

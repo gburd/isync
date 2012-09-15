@@ -42,7 +42,7 @@ const char *str_ms[] = { "master", "slave" }, *str_hl[] = { "push", "pull" };
 void
 Fclose( FILE *f, int safe )
 {
-	if ((safe && (fflush( f ) || fdatasync( fileno( f ) ))) || fclose( f ) == EOF) {
+	if ((safe && (fflush( f ) || (FSyncLevel >= FSYNC_NORMAL && fdatasync( fileno( f ) )))) || fclose( f ) == EOF) {
 		sys_error( "Error: cannot close file. Disk full?" );
 		exit( 1 );
 	}
@@ -1202,7 +1202,8 @@ box_loaded( int sts, void *aux )
 						cv->srec = srec;
 						cv->msg = tmsg;
 						Fprintf( svars->jfp, "# %d %d %." stringify(TUIDL) "s\n", srec->uid[M], srec->uid[S], srec->tuid );
-						fdatasync( fileno( svars->jfp ) );
+						if (FSyncLevel >= FSYNC_THOROUGH)
+							fdatasync( fileno( svars->jfp ) );
 						debug( "  -> %sing message, TUID %." stringify(TUIDL) "s\n", str_hl[t], srec->tuid );
 						if (copy_msg( cv ))
 							return;

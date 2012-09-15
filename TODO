@@ -1,5 +1,7 @@
 find out why mutt's message size calc is confused.
 
+f{,data}sync() usage could be optimized by batching the calls.
+
 add some marker about message being already [remotely] trashed.
 real transactions would be certainly not particularly useful ...
 

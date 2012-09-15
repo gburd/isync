@@ -432,7 +432,7 @@ maildir_store_uid( maildir_store_t *ctx )
 
 	n = sprintf( buf, "%d\n%d\n", ctx->gen.uidvalidity, ctx->nuid );
 	lseek( ctx->uvfd, 0, SEEK_SET );
-	if (write( ctx->uvfd, buf, n ) != n || ftruncate( ctx->uvfd, n ) || fdatasync( ctx->uvfd )) {
+	if (write( ctx->uvfd, buf, n ) != n || ftruncate( ctx->uvfd, n ) || (FSyncLevel >= FSYNC_NORMAL && fdatasync( ctx->uvfd ))) {
 		error( "Maildir error: cannot write UIDVALIDITY.\n" );
 		return DRV_BOX_BAD;
 	}
@@ -1204,7 +1204,7 @@ maildir_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 	}
 	ret = write( fd, data->data, data->len );
 	free( data->data );
-	if (ret != data->len || (ret = fsync( fd ))) {
+	if (ret != data->len || ((FSyncLevel >= FSYNC_NORMAL) && (ret = fsync( fd )))) {
 		if (ret < 0)
 			sys_error( "Maildir error: cannot write %s", buf );
 		else

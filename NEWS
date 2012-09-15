@@ -10,6 +10,8 @@ UIDPLUS extension (e.g., M$ Exchange).
 
 More automatic handling of SSL certificates.
 
+Data safety in case of system crashes is improved.
+
 [1.0.0]
 
 Essentially a rewrite. Synchronization state storage concept, configuration

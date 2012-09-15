@@ -39,6 +39,7 @@ channel_conf_t *channels;
 group_conf_t *groups;
 int global_ops[2];
 char *global_sync_state;
+int FSyncLevel = FSYNC_NORMAL;
 
 #define ARG_OPTIONAL 0
 #define ARG_REQUIRED 1
@@ -447,6 +448,16 @@ load_config( const char *where, int pseudo )
 				}
 			}
 			break;
+		}
+		else if (!strcasecmp( "FSync", cfile.cmd ))
+		{
+			arg = cfile.val;
+			if (!strcasecmp( "None", arg ))
+				FSyncLevel = FSYNC_NONE;
+			else if (!strcasecmp( "Normal", arg ))
+				FSyncLevel = FSYNC_NORMAL;
+			else if (!strcasecmp( "Thorough", arg ))
+				FSyncLevel = FSYNC_THOROUGH;
 		}
 		else if (!getopt_helper( &cfile, &gcops, global_ops, &global_sync_state ))
 		{
