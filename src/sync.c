@@ -1202,6 +1202,7 @@ box_loaded( int sts, void *aux )
 						cv->srec = srec;
 						cv->msg = tmsg;
 						Fprintf( svars->jfp, "# %d %d %." stringify(TUIDL) "s\n", srec->uid[M], srec->uid[S], srec->tuid );
+						fdatasync( fileno( svars->jfp ) );
 						debug( "  -> %sing message, TUID %." stringify(TUIDL) "s\n", str_hl[t], srec->tuid );
 						if (copy_msg( cv ))
 							return;
