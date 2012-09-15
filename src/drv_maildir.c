@@ -1204,7 +1204,7 @@ maildir_store_msg( store_t *gctx, msg_data_t *data, int to_trash,
 	}
 	ret = write( fd, data->data, data->len );
 	free( data->data );
-	if (ret != data->len) {
+	if (ret != data->len || (ret = fsync( fd ))) {
 		if (ret < 0)
 			sys_error( "Maildir error: cannot write %s", buf );
 		else
