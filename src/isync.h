@@ -113,6 +113,7 @@ typedef struct {
 	char *buf;
 	int bufl;
 	int line;
+	int err;
 	char *cmd, *val, *rest;
 } conffile_t;
 
@@ -267,7 +268,7 @@ struct driver {
 	int flags;
 
 	/* Parse configuration. */
-	int (*parse_store)( conffile_t *cfg, store_conf_t **storep, int *err );
+	int (*parse_store)( conffile_t *cfg, store_conf_t **storep );
 
 	/* Close remaining server connections. All stores must be disowned first. */
 	void (*cleanup)( void );
@@ -486,7 +487,7 @@ int parse_size( conffile_t *cfile );
 int getcline( conffile_t *cfile );
 int merge_ops( int cops, int ops[] );
 int load_config( const char *filename, int pseudo );
-void parse_generic_store( store_conf_t *store, conffile_t *cfg, int *err );
+void parse_generic_store( store_conf_t *store, conffile_t *cfg );
 
 /* drv_*.c */
 extern driver_t maildir_driver, imap_driver;

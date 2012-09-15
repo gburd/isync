@@ -1876,7 +1876,7 @@ imap_commit( store_t *gctx )
 imap_server_conf_t *servers, **serverapp = &servers;
 
 static int
-imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
+imap_parse_store( conffile_t *cfg, store_conf_t **storep )
 {
 	imap_store_conf_t *store;
 	imap_server_conf_t *server, *srv, sserver;
@@ -1937,7 +1937,7 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 		else if (!strcasecmp( "PipelineDepth", cfg->cmd )) {
 			if ((server->max_in_progress = parse_int( cfg )) < 1) {
 				error( "%s:%d: PipelineDepth must be at least 1\n", cfg->file, cfg->line );
-				*err = 1;
+				cfg->err = 1;
 			}
 		}
 #ifdef HAVE_LIBSSL
@@ -1946,7 +1946,7 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 			if (access( server->sconf.cert_file, R_OK )) {
 				sys_error( "%s:%d: CertificateFile '%s'",
 				           cfg->file, cfg->line, server->sconf.cert_file );
-				*err = 1;
+				cfg->err = 1;
 			}
 		} else if (!strcasecmp( "RequireSSL", cfg->cmd ))
 			server->require_ssl = parse_bool( cfg );
@@ -1969,7 +1969,7 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 					if (srv->name && !strcmp( srv->name, cfg->val ))
 						goto gotsrv;
 				error( "%s:%d: unknown IMAP account '%s'\n", cfg->file, cfg->line, cfg->val );
-				*err = 1;
+				cfg->err = 1;
 				continue;
 			  gotsrv:
 				store->server = srv;
@@ -1980,11 +1980,11 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 			else if (!strcasecmp( "PathDelimiter", cfg->cmd ))
 				store->delimiter = *cfg->val;
 			else
-				parse_generic_store( &store->gen, cfg, err );
+				parse_generic_store( &store->gen, cfg );
 			continue;
 		} else {
 			error( "%s:%d: unknown/misplaced keyword '%s'\n", cfg->file, cfg->line, cfg->cmd );
-			*err = 1;
+			cfg->err = 1;
 			continue;
 		}
 		acc_opt = 1;
@@ -1995,7 +1995,7 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 				error( "IMAP store '%s' has incomplete/missing connection details\n", store->gen.name );
 			else
 				error( "IMAP account '%s' has incomplete/missing connection details\n", server->name );
-			*err = 1;
+			cfg->err = 1;
 			return 1;
 		}
 	}
@@ -2006,7 +2006,7 @@ imap_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 			store->server->name = store->gen.name;
 		} else if (acc_opt) {
 			error( "IMAP store '%s' has both Account and account-specific options\n", store->gen.name );
-			*err = 1;
+			cfg->err = 1;
 		}
 	}
 	return 1;

@@ -1417,7 +1417,7 @@ maildir_commit( store_t *gctx )
 }
 
 static int
-maildir_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
+maildir_parse_store( conffile_t *cfg, store_conf_t **storep )
 {
 	maildir_store_conf_t *store;
 
@@ -1437,7 +1437,7 @@ maildir_parse_store( conffile_t *cfg, store_conf_t **storep, int *err )
 			store->alt_map = parse_bool( cfg );
 #endif /* USE_DB */
 		else
-			parse_generic_store( &store->gen, cfg, err );
+			parse_generic_store( &store->gen, cfg );
 	if (!store->inbox)
 		store->inbox = expand_strdup( "~/Maildir" );
 	*storep = &store->gen;

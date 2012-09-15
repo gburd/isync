@@ -296,7 +296,7 @@ load_config( const char *where, int pseudo )
 	group_conf_t *group, **groupapp = &groups;
 	string_list_t *chanlist, **chanlistapp;
 	char *arg, *p;
-	int err, len, cops, gcops, max_size, ms, i;
+	int len, cops, gcops, max_size, ms, i;
 	char path[_POSIX_PATH_MAX];
 	char buf[1024];
 
@@ -317,14 +317,15 @@ load_config( const char *where, int pseudo )
 	cfile.buf = buf;
 	cfile.bufl = sizeof(buf) - 1;
 	cfile.line = 0;
+	cfile.err = 0;
 
-	gcops = err = 0;
+	gcops = 0;
   reloop:
 	while (getcline( &cfile )) {
 		if (!cfile.cmd)
 			continue;
 		for (i = 0; i < N_DRIVERS; i++)
-			if (drivers[i]->parse_store( &cfile, &store, &err )) {
+			if (drivers[i]->parse_store( &cfile, &store )) {
 				if (store) {
 					if (!store->path)
 						store->path = "";
@@ -362,7 +363,7 @@ load_config( const char *where, int pseudo )
 					if (*cfile.val != ':' || !(p = strchr( cfile.val + 1, ':' ))) {
 						error( "%s:%d: malformed mailbox spec\n",
 						       cfile.file, cfile.line );
-						err = 1;
+						cfile.err = 1;
 						continue;
 					}
 					*p = 0;
@@ -373,24 +374,24 @@ load_config( const char *where, int pseudo )
 						}
 					error( "%s:%d: unknown store '%s'\n",
 					       cfile.file, cfile.line, cfile.val + 1 );
-					err = 1;
+					cfile.err = 1;
 					continue;
 				  stpcom:
 					if (*++p)
 						channel->boxes[ms] = nfstrdup( p );
 				} else if (!getopt_helper( &cfile, &cops, channel->ops, &channel->sync_state )) {
 					error( "%s:%d: unknown keyword '%s'\n", cfile.file, cfile.line, cfile.cmd );
-					err = 1;
+					cfile.err = 1;
 				}
 			}
 			if (!channel->stores[M]) {
 				error( "channel '%s' refers to no master store\n", channel->name );
-				err = 1;
+				cfile.err = 1;
 			} else if (!channel->stores[S]) {
 				error( "channel '%s' refers to no slave store\n", channel->name );
-				err = 1;
+				cfile.err = 1;
 			} else if (merge_ops( cops, channel->ops ))
-				err = 1;
+				cfile.err = 1;
 			else {
 				if (max_size >= 0)
 					channel->stores[M]->max_size = channel->stores[S]->max_size = max_size;
@@ -429,7 +430,7 @@ load_config( const char *where, int pseudo )
 				{
 					error( "%s:%d: unknown keyword '%s'\n",
 					       cfile.file, cfile.line, cfile.cmd );
-					err = 1;
+					cfile.err = 1;
 				}
 			}
 			break;
@@ -438,7 +439,7 @@ load_config( const char *where, int pseudo )
 		{
 			error( "%s:%d: unknown section keyword '%s'\n",
 			       cfile.file, cfile.line, cfile.cmd );
-			err = 1;
+			cfile.err = 1;
 			while (getcline( &cfile ))
 				if (!cfile.cmd)
 					goto reloop;
@@ -446,16 +447,16 @@ load_config( const char *where, int pseudo )
 		}
 	}
 	fclose (cfile.fp);
-	err |= merge_ops( gcops, global_ops );
+	cfile.err |= merge_ops( gcops, global_ops );
 	if (!global_sync_state)
 		global_sync_state = expand_strdup( "~/." EXE "/" );
-	if (!err && pseudo)
+	if (!cfile.err && pseudo)
 		unlink( where );
-	return err;
+	return cfile.err;
 }
 
 void
-parse_generic_store( store_conf_t *store, conffile_t *cfg, int *err )
+parse_generic_store( store_conf_t *store, conffile_t *cfg )
 {
 	if (!strcasecmp( "Trash", cfg->cmd ))
 		store->trash = nfstrdup( cfg->val );
@@ -471,15 +472,15 @@ parse_generic_store( store_conf_t *store, conffile_t *cfg, int *err )
 		int sl = strlen( cfg->val );
 		if (sl != 1) {
 			error( "%s:%d: malformed flattened hierarchy delimiter\n", cfg->file, cfg->line );
-			*err = 1;
+			cfg->err = 1;
 		} else if (cfg->val[0] == '/') {
 			error( "%s:%d: flattened hierarchy delimiter cannot be the canonical delimiter '/'\n", cfg->file, cfg->line );
-			*err = 1;
+			cfg->err = 1;
 		} else {
 			store->flat_delim = cfg->val[0];
 		}
 	} else {
 		error( "%s:%d: unknown keyword '%s'\n", cfg->file, cfg->line, cfg->cmd );
-		*err = 1;
+		cfg->err = 1;
 	}
 }
