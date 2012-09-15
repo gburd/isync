@@ -456,10 +456,10 @@ write_config( int fd )
 			box->channel_name = cn;
 		  gotchan:
 			if (box->path[0] == '/')
-				fprintf( fp, "Channel %s\nMaster :%s:%s\nSlave :local_root:%s\n",
+				fprintf( fp, "Channel %s\nMaster :%s:\"%s\"\nSlave :local_root:\"%s\"\n",
 				         box->channel_name, box->store_name, box->box, box->path + 1 );
 			else
-				fprintf( fp, "Channel %s\nMaster :%s:%s\nSlave :local:%s\n",
+				fprintf( fp, "Channel %s\nMaster :%s:\"%s\"\nSlave :local:\"%s\"\n",
 				         box->channel_name, box->store_name, box->box, box->path );
 			write_channel_parm( fp, box );
 		}
