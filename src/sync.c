@@ -33,12 +33,16 @@
 #include <errno.h>
 #include <sys/stat.h>
 
+#ifndef _POSIX_SYNCHRONIZED_IO
+# define fdatasync fsync
+#endif
+
 const char *str_ms[] = { "master", "slave" }, *str_hl[] = { "push", "pull" };
 
 void
-Fclose( FILE *f )
+Fclose( FILE *f, int safe )
 {
-	if (fclose( f ) == EOF) {
+	if ((safe && (fflush( f ) || fdatasync( fileno( f ) ))) || fclose( f ) == EOF) {
 		sys_error( "Error: cannot close file. Disk full?" );
 		exit( 1 );
 	}
@@ -496,8 +500,8 @@ cancel_done( void *aux )
 	svars->state[t] |= ST_CANCELED;
 	if (svars->state[1-t] & ST_CANCELED) {
 		if (svars->lfd) {
-			Fclose( svars->nfp );
-			Fclose( svars->jfp );
+			Fclose( svars->nfp, 0 );
+			Fclose( svars->jfp, 0 );
 			sync_bail( svars );
 		} else {
 			sync_bail2( svars );
@@ -1698,8 +1702,8 @@ box_closed_p2( sync_vars_t *svars, int t )
 		         srec->status & S_EXPIRED ? "X" : "", fbuf );
 	}
 
-	Fclose( svars->nfp );
-	Fclose( svars->jfp );
+	Fclose( svars->nfp, 1 );
+	Fclose( svars->jfp, 0 );
 	if (!(DFlags & KEEPJOURNAL)) {
 		/* order is important! */
 		rename( svars->nname, svars->dname );
