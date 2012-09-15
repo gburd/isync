@@ -57,8 +57,10 @@ get_arg( conffile_t *cfile, int required, int *comment )
 	if (!c || c == '#') {
 		if (comment)
 			*comment = (c == '#');
-		if (required)
+		if (required) {
 			error( "%s:%d: parameter missing\n", cfile->file, cfile->line );
+			cfile->err = 1;
+		}
 		ret = 0;
 	} else {
 		for (quoted = 0, ret = t = p; c; c = *p) {
@@ -73,6 +75,7 @@ get_arg( conffile_t *cfile, int required, int *comment )
 		*t = 0;
 		if (quoted) {
 			error( "%s:%d: missing closing quote\n", cfile->file, cfile->line );
+			cfile->err = 1;
 			ret = 0;
 		}
 	}
@@ -91,9 +94,11 @@ parse_bool( conffile_t *cfile )
 	if (strcasecmp( cfile->val, "no" ) &&
 	    strcasecmp( cfile->val, "false" ) &&
 	    strcasecmp( cfile->val, "off" ) &&
-	    strcmp( cfile->val, "0" ))
+	    strcmp( cfile->val, "0" )) {
 		error( "%s:%d: invalid boolean value '%s'\n",
 		       cfile->file, cfile->line, cfile->val );
+		cfile->err = 1;
+	}
 	return 0;
 }
 
@@ -107,6 +112,7 @@ parse_int( conffile_t *cfile )
 	if (*p) {
 		error( "%s:%d: invalid integer value '%s'\n",
 		       cfile->file, cfile->line, cfile->val );
+		cfile->err = 1;
 		return 0;
 	}
 	return ret;
@@ -128,6 +134,7 @@ parse_size( conffile_t *cfile )
 	if (*p) {
 		fprintf (stderr, "%s:%d: invalid size '%s'\n",
 		         cfile->file, cfile->line, cfile->val);
+		cfile->err = 1;
 		return 0;
 	}
 	return ret;
@@ -171,9 +178,11 @@ getopt_helper( conffile_t *cfile, int *cops, int ops[], char **sync_state )
 				ops[M] |= OP_FLAGS;
 			else if (!strcasecmp( "All", arg ) || !strcasecmp( "Full", arg ))
 				*cops |= XOP_PULL|XOP_PUSH;
-			else if (strcasecmp( "None", arg ) && strcasecmp( "Noop", arg ))
+			else if (strcasecmp( "None", arg ) && strcasecmp( "Noop", arg )) {
 				error( "%s:%d: invalid Sync arg '%s'\n",
 				       cfile->file, cfile->line, arg );
+				cfile->err = 1;
+			}
 		while ((arg = get_arg( cfile, ARG_OPTIONAL, 0 )));
 		ops[M] |= XOP_HAVE_TYPE;
 	} else if (!strcasecmp( "Expunge", cfile->cmd )) {
@@ -185,9 +194,11 @@ getopt_helper( conffile_t *cfile, int *cops, int ops[], char **sync_state )
 				ops[M] |= OP_EXPUNGE;
 			else if (!strcasecmp( "Slave", arg ))
 				ops[S] |= OP_EXPUNGE;
-			else if (strcasecmp( "None", arg ))
+			else if (strcasecmp( "None", arg )) {
 				error( "%s:%d: invalid Expunge arg '%s'\n",
 				       cfile->file, cfile->line, arg );
+				cfile->err = 1;
+			}
 		while ((arg = get_arg( cfile, ARG_OPTIONAL, 0 )));
 		ops[M] |= XOP_HAVE_EXPUNGE;
 	} else if (!strcasecmp( "Create", cfile->cmd )) {
@@ -199,9 +210,11 @@ getopt_helper( conffile_t *cfile, int *cops, int ops[], char **sync_state )
 				ops[M] |= OP_CREATE;
 			else if (!strcasecmp( "Slave", arg ))
 				ops[S] |= OP_CREATE;
-			else if (strcasecmp( "None", arg ))
+			else if (strcasecmp( "None", arg )) {
 				error( "%s:%d: invalid Create arg '%s'\n",
 				       cfile->file, cfile->line, arg );
+				cfile->err = 1;
+			}
 		while ((arg = get_arg( cfile, ARG_OPTIONAL, 0 )));
 		ops[M] |= XOP_HAVE_CREATE;
 	} else if (!strcasecmp( "SyncState", cfile->cmd ))
