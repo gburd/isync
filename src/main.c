@@ -702,8 +702,26 @@ store_opened( store_t *ctx, void *aux )
 	if (!mvars->skip && !mvars->boxlist && mvars->chan->patterns && !ctx->listed) {
 		for (flags = 0, cpat = mvars->chan->patterns; cpat; cpat = cpat->next) {
 			const char *pat = cpat->string;
-			if (*pat != '!')
-				flags |= (!memcmp( pat, "INBOX", 5 ) && (!pat[5] || pat[5] == '/')) ? LIST_INBOX : LIST_PATH;
+			if (*pat != '!') {
+				int i;
+				char c;
+				static const char strinbox[] = "INBOX";
+				for (i = 0; ; i++) {
+					c = pat[i];
+					if (i == sizeof(strinbox) - 1)
+						break;
+					if (c != strinbox[i])
+						goto nextpat;
+				}
+				if (!c || c == '/') {
+					flags |= LIST_INBOX;
+				} else {
+				  nextpat:
+					flags |= LIST_PATH;
+					if (c == '*' || c == '%')
+						flags |= LIST_INBOX;
+				}
+			}
 		}
 		set_bad_callback( ctx, store_bad, AUX );
 		mvars->drv[t]->list( ctx, flags, store_listed, AUX );
