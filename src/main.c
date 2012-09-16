@@ -713,8 +713,13 @@ store_opened( store_t *ctx, void *aux )
 					if (c != strinbox[i])
 						goto nextpat;
 				}
-				if (!c || c == '/') {
+				if (!c) {
 					flags |= LIST_INBOX;
+				} else if (c == '/') {
+					if (ctx->conf->flat_delim)
+						flags |= LIST_PATH;
+					else
+						flags |= LIST_INBOX;
 				} else {
 				  nextpat:
 					flags |= LIST_PATH;
