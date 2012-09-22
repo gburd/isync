@@ -37,6 +37,7 @@ flushn( void )
 {
 	if (need_nl) {
 		putchar( '\n' );
+		fflush( stdout );
 		need_nl = 0;
 	}
 }

@@ -250,6 +250,7 @@ send_imap_cmd( imap_store_t *ctx, struct imap_cmd *cmd )
 			printf( ">>> %s", buf );
 		else
 			printf( ">>> %d LOGIN <user> <pass>\n", cmd->tag );
+		fflush( stdout );
 	}
 	if (socket_write( &ctx->conn, buf, bufl, KeepOwn ) < 0)
 		goto bail;
@@ -573,6 +574,7 @@ parse_imap_list( imap_store_t *ctx, char **sp, parse_list_state_t *sts )
 				puts( "=========" );
 				fwrite( cur->val, cur->len, 1, stdout );
 				puts( "=========" );
+				fflush( stdout );
 			}
 
 		  getline:
@@ -1185,8 +1187,10 @@ do_cram_auth( imap_store_t *ctx, struct imap_cmd *cmdp, const char *prompt )
 
 	cram( prompt, srvc->user, srvc->pass, &resp, &l );
 
-	if (DFlags & VERBOSE)
+	if (DFlags & VERBOSE) {
 		printf( ">+> %s\n", resp );
+		fflush( stdout );
+	}
 	return socket_write( &ctx->conn, resp, l, GiveOwn );
 }
 #endif
