@@ -535,6 +535,8 @@ parse_imap_list( imap_store_t *ctx, char **sp, parse_list_state_t *sts )
 		goto getbytes;
 	}
 
+	if (!s)
+		return LIST_BAD;
 	for (;;) {
 		while (isspace( (unsigned char)*s ))
 			s++;
@@ -785,7 +787,7 @@ parse_response_code( imap_store_t *ctx, struct imap_cmd *cmd, char *s )
 {
 	char *arg, *earg, *p;
 
-	if (*s != '[')
+	if (!s || *s != '[')
 		return RESP_OK;		/* no response code */
 	s++;
 	if (!(p = strchr( s, ']' ))) {
@@ -827,19 +829,20 @@ parse_response_code( imap_store_t *ctx, struct imap_cmd *cmd, char *s )
 	return RESP_OK;
 }
 
-static void
+static int
 parse_list_rsp( imap_store_t *ctx, char *cmd )
 {
 	char *arg;
 	list_t *list, *lp;
 	int l;
 
-	list = parse_list( &cmd );
+	if (!(list = parse_list( &cmd )))
+		return -1;
 	if (list->val == LIST)
 		for (lp = list->child; lp; lp = lp->next)
 			if (is_atom( lp ) && !strcasecmp( lp->val, "\\NoSelect" )) {
 				free_list( list );
-				return;
+				return 0;
 			}
 	free_list( list );
 	arg = next_arg( &cmd );
@@ -849,21 +852,22 @@ parse_list_rsp( imap_store_t *ctx, char *cmd )
 	if (memcmp( arg, "INBOX", 5 ) || (arg[5] && arg[5] != ctx->delimiter)) {
 		l = strlen( ctx->gen.conf->path );
 		if (memcmp( arg, ctx->gen.conf->path, l ))
-			return;
+			return 0;
 		arg += l;
 		if (!memcmp( arg, "INBOX", 5 ) && (!arg[5] || arg[5] == ctx->delimiter)) {
 			if (!arg[5])
 				warn( "IMAP warning: ignoring INBOX in %s\n", ctx->gen.conf->path );
-			return;
+			return 0;
 		}
 	}
 	if (!memcmp( arg + strlen( arg ) - 5, ".lock", 5 )) /* workaround broken servers */
-		return;
+		return 0;
 	if (map_name( arg, ctx->delimiter, '/') < 0) {
 		warn( "IMAP warning: ignoring mailbox %s (reserved character '/' in name)\n", arg );
-		return;
+		return 0;
 	}
 	add_string_list( &ctx->gen.boxes, arg );
+	return 0;
 }
 
 static int
@@ -925,6 +929,10 @@ imap_socket_read( void *aux )
 			return;
 
 		arg = next_arg( &cmd );
+		if (!arg) {
+			error( "IMAP error: empty response\n" );
+			break;
+		}
 		if (*arg == '*') {
 			arg = next_arg( &cmd );
 			if (!arg) {
@@ -933,9 +941,12 @@ imap_socket_read( void *aux )
 			}
 
 			if (!strcmp( "NAMESPACE", arg )) {
-				ctx->ns_personal = parse_list( &cmd );
-				ctx->ns_other = parse_list( &cmd );
-				ctx->ns_shared = parse_list( &cmd );
+				if (!(ctx->ns_personal = parse_list( &cmd )) ||
+				    !(ctx->ns_other = parse_list( &cmd )) ||
+				    !(ctx->ns_shared = parse_list( &cmd ))) {
+					error( "IMAP error: malformed NAMESPACE response\n" );
+					break;
+				}
 			} else if (ctx->greeting == GreetingPending && !strcmp( "PREAUTH", arg )) {
 				ctx->greeting = GreetingPreauth;
 				parse_response_code( ctx, 0, cmd );
@@ -945,11 +956,14 @@ imap_socket_read( void *aux )
 			} else if (!strcmp( "BAD", arg ) || !strcmp( "NO", arg ) || !strcmp( "BYE", arg )) {
 				ctx->greeting = GreetingBad;
 				parse_response_code( ctx, 0, cmd );
-			} else if (!strcmp( "CAPABILITY", arg ))
+			} else if (!strcmp( "CAPABILITY", arg )) {
 				parse_capability( ctx, cmd );
-			else if (!strcmp( "LIST", arg ))
-				parse_list_rsp( ctx, cmd );
-			else if ((arg1 = next_arg( &cmd ))) {
+			} else if (!strcmp( "LIST", arg )) {
+				if (parse_list_rsp( ctx, cmd ) < 0) {
+					error( "IMAP error: malformed LIST response\n" );
+					break;
+				}
+			} else if ((arg1 = next_arg( &cmd ))) {
 				if (!strcmp( "EXISTS", arg1 ))
 					ctx->gen.count = atoi( arg );
 				else if (!strcmp( "RECENT", arg1 ))
@@ -1010,6 +1024,10 @@ imap_socket_read( void *aux )
 				ctx->in_progress_append = pcmdp;
 			ctx->num_in_progress--;
 			arg = next_arg( &cmd );
+			if (!arg) {
+				error( "IMAP error: malformed tagged response\n" );
+				break;
+			}
 			if (!strcmp( "OK", arg )) {
 				if (cmdp->param.to_trash)
 					ctx->trashnc = TrashKnown; /* Can't get NO [TRYCREATE] any more. */
